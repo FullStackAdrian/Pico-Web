@@ -8,7 +8,6 @@ app = Flask(__name__)
 
 CORS(app, origins=["http://127.0.0.1:5500"])
 
-# Importar todos los endpoints de archivos que empiezan por 'list_' y terminan en '.py'
 endpoints_dir = os.path.dirname(__file__)
 for filename in os.listdir(endpoints_dir):
     if  filename.endswith('.py') and filename != 'app.py':
