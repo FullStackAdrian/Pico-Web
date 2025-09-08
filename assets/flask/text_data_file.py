@@ -4,7 +4,7 @@ import os
 app = Flask(__name__)
 
 def register_endpoints(app):
-    @app.route('/text_data-File/', methods=['POST'])
+    @app.route('/text-data-file', methods=['POST'])
     def text_data_file():
         data = request.get_json()
         if not data or "filename" not in data:

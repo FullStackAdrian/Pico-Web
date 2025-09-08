@@ -1,4 +1,8 @@
-export function executeScript(file) {
-  // Lógica para ejecutar el script
-  console.log(`Ejecutando script: ${file}`);
+import { getScriptText } from "../services/getScriptTextService.js";
+
+export function executeScript(filename) {
+  try {
+    const scriptDataText = getScriptText(filename);
+    return scriptDataText;
+  } catch (error) {}
 }
