@@ -1,6 +1,6 @@
 // api.js
 const baseURL = "http://localhost:8080";
-const timeout = 10000; // en ms
+const timeout = 10000; 
 
 async function apiFetch(endpoint, options = {}) {
   const controller = new AbortController();
@@ -29,7 +29,6 @@ async function apiFetch(endpoint, options = {}) {
   }
 }
 
-// exportamos como un objeto estilo axios
 const api = {
   get: (url, options = {}) => apiFetch(url, { ...options, method: "GET" }),
   post: (url, data, options = {}) =>
