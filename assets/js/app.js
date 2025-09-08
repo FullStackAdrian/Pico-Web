@@ -1,4 +1,4 @@
-import { showScriptsList} from "./usecases/scriptListUsecase.js";
+import { showScriptsList} from "./usecases/showScriptListUsecase.js";
 
 function app() {
   showScriptsList();
