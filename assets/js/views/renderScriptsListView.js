@@ -1,3 +1,5 @@
+import { executeScript } from "../usecases/executeScriptUsecase.js";
+
 export function renderScriptsList(files, error = null) {
   const scriptList = document.getElementById("script-list");
   if (!scriptList) {
@@ -20,7 +22,13 @@ export function renderScriptsList(files, error = null) {
 
   files.forEach((file) => {
     const li = document.createElement("li");
+    const btn = document.createElement("button");
     li.textContent = String(file);
+    btn.textContent = "Ejecutar";
+    btn.onclick = () => {
+      executeScript(file);
+    };
+    li.appendChild(btn);
     scriptList.appendChild(li);
   });
 }
