@@ -1,4 +1,3 @@
-// api.js
 const baseURL = "http://localhost:8080";
 const timeout = 10000; 
 
@@ -23,9 +22,9 @@ async function apiFetch(endpoint, options = {}) {
     }
 
     return await response.json();
-  } catch (err) {
+  } catch (error) {
     clearTimeout(id);
-    throw err;
+    throw error;
   }
 }
 

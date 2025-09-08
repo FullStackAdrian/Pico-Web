@@ -1,6 +1,6 @@
-import { showScripts } from "./show-scripts.js";
+import { showScriptsList} from "./usecases/scriptListUsecase.js";
 
 function app() {
-  showScripts();
+  showScriptsList();
 }
 app();
