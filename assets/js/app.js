@@ -1,6 +1,6 @@
-import { showScriptsList} from "./usecases/showScriptListUsecase.js";
+import { renderScriptsList} from "./controller/renderScriptsListController.js";
 
 function app() {
-  showScriptsList();
+  renderScriptsList();
 }
 app();
