@@ -1,4 +1,4 @@
-import { getScriptsList } from "../usecases/getScriptListUsecase";
+import { getScriptsList } from "../usecases/getScriptListUsecase.js";
 import { renderScriptsList as renderView } from "../views/renderScriptsListView.js";
 
 export async function renderScriptsList() {
