@@ -1,6 +1,6 @@
 import api from "../utils/api.js";
 
-export async function getScriptText(filename) {
+export async function requestScriptText(filename) {
   try {
     const response = await api.post("/text-data-file", {
       filename    });

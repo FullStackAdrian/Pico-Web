@@ -1,4 +1,4 @@
-import { executeScript } from "../usecases/executeScriptUsecase.js";
+import { handleExecuteScript } from "../controllers/executeScriptController.js";
 
 export function renderScriptsList(files, error = null) {
   const scriptList = document.getElementById("script-list");
@@ -26,7 +26,7 @@ export function renderScriptsList(files, error = null) {
     li.textContent = String(file);
     btn.textContent = "Ejecutar";
     btn.onclick = () => {
-      executeScript(file);
+      handleExecuteScript(file);
     };
     li.appendChild(btn);
     scriptList.appendChild(li);

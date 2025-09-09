@@ -1,8 +1,11 @@
-import { getScriptText } from "../services/getScriptTextService.js";
+import { requestScriptText } from "../services/getScriptTextService.js";
 
 export function getScriptText(filename) {
   try {
-    const scriptDataText = getScriptText(filename);
+    const scriptDataText = requestScriptText(filename);
+    if (!scriptDataText) {
+      throw new Error("No script text found");
+    }
     return scriptDataText;
   } catch (error) {}
 }

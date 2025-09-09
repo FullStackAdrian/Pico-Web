@@ -1,6 +1,6 @@
 import api from "../utils/api.js";
 
-export async function getScriptsList() {
+export async function requestScriptsList() {
   try {
     const response = await api.get("/list-files");
     if (!response) {

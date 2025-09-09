@@ -1,12 +1,12 @@
 const baseURL = "http://192.168.4.1";
 const timeout = 10000; 
 
-async function apiFetch(endpoint, options = {}) {
+async function apiFetch( options = {}) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
 
   try {
-    const response = await fetch(baseURL + endpoint, {
+    const response = await fetch(baseURL, {
       ...options,
       headers: {
         "Content-Type": "application/json",
@@ -29,20 +29,20 @@ async function apiFetch(endpoint, options = {}) {
 }
 
 const pico = {
-  get: (url, options = {}) => apiFetch(url, { ...options, method: "GET" }),
-  post: (url, data, options = {}) =>
-    apiFetch(url, {
+  get: ( options = {}) => apiFetch( { ...options, method: "GET" }),
+  post: ( data, options = {}) =>
+    apiFetch( {
       ...options,
       method: "POST",
-      body: JSON.stringify(data),
+      body: String.raw(data),
     }),
-  put: (url, data, options = {}) =>
-    apiFetch(url, {
+  put: ( data, options = {}) =>
+    apiFetch( {
       ...options,
       method: "PUT",
       body: JSON.stringify(data),
     }),
-  delete: (url, options = {}) => apiFetch(url, { ...options, method: "DELETE" }),
+  delete: ( options = {}) => apiFetch( { ...options, method: "DELETE" }),
 };
 
 export default pico;
