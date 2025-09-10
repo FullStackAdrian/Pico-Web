@@ -16,7 +16,7 @@ print("AP iniciado. SSID:", AP_SSID, "IP:", wifi.radio.ipv4_address_ap)
 
 # keyboard init
 kbd = Keyboard(usb_hid.devices)
-layout = KeyboardLayoutUS(kbd)
+layout = KeyboardLayoutBase(kbd)
 
 def press_enter():
     """Envia ENTER (útil también para '\n')."""
