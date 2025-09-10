@@ -6,7 +6,7 @@ import os
 
 app = Flask(__name__)
 
-CORS(app, origins=["http://127.0.0.1:5500"])
+CORS(app, origins=["http://192.168.4.16:5500"])
 
 endpoints_dir = os.path.dirname(__file__)
 for filename in os.listdir(endpoints_dir):

@@ -21,7 +21,7 @@ async function apiFetch( options = {}) {
       throw new Error(`Error ${response.status}: ${response.statusText}`);
     }
 
-    return await response.json();
+    return await response;
   } catch (error) {
     clearTimeout(id);
     throw error;
@@ -29,7 +29,7 @@ async function apiFetch( options = {}) {
 }
 
 const pico = {
-  get: ( options = {}) => apiFetch( { ...options, method: "GET" }),
+  get: ( options ) => fetch( baseURL + "/msg="+ options),
   post: ( data, options = {}) =>
     apiFetch( {
       ...options,

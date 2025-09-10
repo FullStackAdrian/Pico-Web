@@ -6,7 +6,7 @@ from adafruit_hid.keyboard import Keyboard
 from adafruit_hid.keycode import Keycode
 from adafruit_hid.keyboard_layout_us import KeyboardLayoutUS
 
-# ---------- CONFIG AP ----------
+# CONFIG AP 
 AP_SSID = "PicoW-Writer"
 AP_PASSWORD = "12345678"
 
@@ -14,7 +14,7 @@ print("Iniciando Access Point...")
 wifi.radio.start_ap(AP_SSID, AP_PASSWORD)
 print("AP iniciado. SSID:", AP_SSID, "IP:", wifi.radio.ipv4_address_ap)
 
-# keyboard init 
+# keyboard init
 kbd = Keyboard(usb_hid.devices)
 layout = KeyboardLayoutUS(kbd)
 
@@ -22,7 +22,7 @@ def press_enter():
     """Envia ENTER (útil también para '\n')."""
     kbd.press(Keycode.ENTER)
     kbd.release_all()
-    time.sleep(0.03)  
+    time.sleep(0.03)
 
 # url decode to bytearray and then to str
 def url_decode(s):
@@ -32,49 +32,55 @@ def url_decode(s):
     L = len(s)
     while i < L:
         c = s[i]
-        if c == '%':
+        if c == "%":
             if i + 2 < L:
                 try:
-                    ba.append(int(s[i+1:i+3], 16))
+                    ba.append(int(s[i + 1 : i + 3], 16))
                     i += 3
                 except Exception:
                     # si no son hex, dejar '%' literal
-                    ba.append(ord('%'))
+                    ba.append(ord("%"))
                     i += 1
             else:
-                ba.append(ord('%'))
+                ba.append(ord("%"))
                 i += 1
-        elif c == '+':
-            ba.append(ord(' '))
+        elif c == "+":
+            ba.append(ord(" "))
             i += 1
         else:
             ba.append(ord(c))
             i += 1
     try:
-        return ba.decode('utf-8')
+        return ba.decode("utf-8")
     except Exception:
-        # fallback: latin-1 para no perder bytes (raro en la práctica)
-        return ba.decode('latin-1')
+        return ba.decode("latin-1")
 
-# ---------- Normalización: quitar acentos comunes convirtiéndolos a ASCII ----------
+# remap accented characters to non-accented ASCII
 accent_map = {
-    "á": "a", "Á": "A",
-    "é": "e", "É": "E",
-    "í": "i", "Í": "I",
-    "ó": "o", "Ó": "O",
-    "ú": "u", "Ú": "U",
-    "ñ": "n", "Ñ": "N",
-    "ü": "u", "Ü": "U",
+    "á": "a",
+    "Á": "A",
+    "é": "e",
+    "É": "E",
+    "í": "i",
+    "Í": "I",
+    "ó": "o",
+    "Ó": "O",
+    "ú": "u",
+    "Ú": "U",
+    "ñ": "n",
+    "Ñ": "N",
+    "ü": "u",
+    "Ü": "U",
 }
 
 # manual mapping for special characters not handled by layout.write
 special_map = {
     "-": (Keycode.MINUS, False),
-    "|": (Keycode.BACKSLASH, True),   # '|' = SHIFT + BACKSLASH en layout US
-    "&": (Keycode.SEVEN, True),       # '&' = SHIFT + '7'
+    "|": (Keycode.BACKSLASH, True),  # '|' = SHIFT + BACKSLASH en layout US
+    "&": (Keycode.SEVEN, True),  # '&' = SHIFT + '7'
     "/": (Keycode.FORWARD_SLASH, False),
     "\\": (Keycode.BACKSLASH, False),
-    "_": (Keycode.MINUS, True),       # '_' = SHIFT + '-'
+    "_": (Keycode.MINUS, True),  # '_' = SHIFT + '-'
     "=": (Keycode.EQUALS, False),
     "+": (Keycode.EQUALS, True),
     ";": (Keycode.SEMICOLON, False),
@@ -85,7 +91,7 @@ special_map = {
     ">": (Keycode.PERIOD, True),
     "?": (Keycode.FORWARD_SLASH, True),
     "'": (Keycode.QUOTE, False),
-    "\"": (Keycode.QUOTE, True),
+    '"': (Keycode.QUOTE, True),
     "[": (Keycode.LEFT_BRACKET, False),
     "{": (Keycode.LEFT_BRACKET, True),
     "]": (Keycode.RIGHT_BRACKET, False),
@@ -100,6 +106,7 @@ special_map = {
     "^": (Keycode.SIX, True),
     "*": (Keycode.EIGHT, True),
 }
+
 
 # write text preferring special character mapping, normalizing to ASCII
 def type_text_ascii_prefer_symbols(text):
@@ -126,14 +133,15 @@ def type_text_ascii_prefer_symbols(text):
             else:
                 kbd.press(keycode)
                 kbd.release_all()
-            time.sleep(0.01)  
+            time.sleep(0.01)
             continue
 
         # write in US layout
         layout.write(ch)
         time.sleep(0.005)
 
-## http server 
+
+## http server
 pool = socketpool.SocketPool(wifi.radio)
 server_socket = pool.socket(pool.AF_INET, pool.SOCK_STREAM)
 server_socket.bind(("0.0.0.0", 80))
@@ -155,6 +163,17 @@ while True:
         req = bytes(buf[:n]).decode("utf-8", "ignore")
         # primera línea: p.e. "GET /?msg=hola%20mundo HTTP/1.1"
         first_line = req.split("\n")[0]
+        if first_line.startswith("OPTIONS"):
+            response = (
+                "HTTP/1.1 204 No Content\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+                "Access-Control-Allow-Headers: Content-Type\r\n"
+                "\r\n"
+            )
+            conn.send(response.encode("utf-8"))
+            conn.close()
+            continue
 
         if "GET" in first_line and "msg=" in first_line:
             # coger texto después de msg= hasta el siguiente espacio (fin de la URL)
@@ -168,11 +187,22 @@ while True:
             type_text_ascii_prefer_symbols(decoded)
             press_enter()
 
-            response = "HTTP/1.1 204 No Content\r\n\r\n"
+            response = (
+                "HTTP/1.1 204 No Content\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+                "Access-Control-Allow-Headers: Content-Type\r\n"
+                "\r\n"
+            )
             conn.send(response.encode("utf-8"))
         else:
-            # petición sin msg: devolver 400 simple
-            response = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nNo msg"
+            response = (
+                "HTTP/1.1 400 Bad Request\r\n"
+                "Content-Type: text/plain\r\n"
+                "Access-Control-Allow-Origin: *\r\n"
+                "\r\n"
+                "No msg"
+            )
             conn.send(response.encode("utf-8"))
 
         conn.close()
