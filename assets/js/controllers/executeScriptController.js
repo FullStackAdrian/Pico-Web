@@ -7,7 +7,6 @@ export async function handleExecuteScript(filename) {
         const response = await executeScriptByURL(scriptText);
         return response;
     } catch (error) {
-        console.error("Error executing script:", error);
         throw error;
     }
 }

@@ -2,11 +2,10 @@ import { requestExecuteScriptByURL } from "../services/executeScriptByURLService
 
 export async function executeScriptByURL(scriptText) {
   try {
-    if (!scriptText) {
-      throw new Error("ScriptText is required");
-    }
-    const encodedURLScriptText = encodeURIComponent(scriptText);
+    const encodedURLScriptText = encodeURIComponent(scriptText.content);
     const response = await requestExecuteScriptByURL(encodedURLScriptText);
     return response;
-  } catch (error) {}
+  } catch (error) {
+    throw error;
+  }
 }
