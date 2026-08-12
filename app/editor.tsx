@@ -34,14 +34,18 @@ export default function Editor() {
   }
 
   const current: AppState = state;
-  const script: Script | undefined = current.scripts.find((item) => item.id === id) ?? current.scripts[0];
-  if (!script) {
+  const foundScript = current.scripts.find((item) => item.id === id);
+  const script = foundScript ?? current.scripts[0];
+  if (!script || !script.id) {
     return <View style={styles.center}><Text style={styles.muted}>No script selected.</Text></View>;
   }
+  const scriptId = script.id;
 
   async function save() {
     const updated: Script = {
       ...script,
+      id: scriptId,
+      createdAt: script.createdAt ?? new Date().toISOString(),
       name: name.trim() || 'Untitled',
       content,
       category: category.trim() || 'Uncategorized',
@@ -51,7 +55,7 @@ export default function Editor() {
     };
     const next: AppState = {
       ...current,
-      scripts: current.scripts.map((item) => item.id === script.id ? updated : item),
+      scripts: current.scripts.map((item) => item.id === scriptId ? updated : item),
     };
     await saveState(next);
     setState(next);
