@@ -22,9 +22,11 @@ describe('Scripts library', () => {
 
   it('loads remote scripts and displays local and remote entries', async () => {
     (listRemoteScripts as jest.Mock).mockResolvedValue([remotePayload]);
-    const { findByText } = render(<Scripts />);
-    expect(await findByText('WiFi setup')).toBeTruthy();
-    expect(await findByText('Remote x')).toBeTruthy();
+    const { getByText } = render(<Scripts />);
+    await waitFor(() => {
+      expect(getByText('WiFi setup')).toBeTruthy();
+      expect(getByText('Remote x')).toBeTruthy();
+    });
     expect(mockedSave).toHaveBeenCalled();
   });
 
@@ -74,9 +76,10 @@ describe('Scripts library', () => {
 
   it('does not delete remote scripts', async () => {
     (listRemoteScripts as jest.Mock).mockResolvedValue([{ ...base.scripts[1] }]);
-    const { findByText, getByText } = render(<Scripts />);
+    const { findByText, getAllByText } = render(<Scripts />);
     expect(await findByText('Remote payload')).toBeTruthy();
-    fireEvent.press(getByText('×'));
+    const deleteButtons = getAllByText('×');
+    fireEvent.press(deleteButtons[1]);
     expect(mockedSave).toHaveBeenCalledTimes(1);
   });
 });
