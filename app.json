@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Pico Web",
+    "slug": "pico-web",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "picoweb",
+    "userInterfaceStyle": "dark",
+    "plugins": ["expo-router"],
+    "android": { "package": "com.fullstackadrian.picoweb" },
+    "ios": { "bundleIdentifier": "com.fullstackadrian.picoweb" }
+  }
+}
