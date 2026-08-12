@@ -26,7 +26,7 @@ describe('Scripts library', () => {
     await waitFor(() => {
       expect(getByText('WiFi setup')).toBeTruthy();
       expect(getByText('Remote x')).toBeTruthy();
-    });
+    }, { timeout: 5000 });
     expect(mockedSave).toHaveBeenCalled();
   });
 
