@@ -29,7 +29,7 @@ describe('Scripts library', () => {
   });
 
   it('filters scripts by name and tags', async () => {
-    const { getByPlaceholderText, findByText, queryByText } = render(<Scripts />);
+    const { getByPlaceholderText, findByText, queryByText, getByText } = render(<Scripts />);
     expect(await findByText('WiFi setup')).toBeTruthy();
     fireEvent.changeText(getByPlaceholderText('Search scripts, tags…'), 'wifi');
     expect(getByText('WiFi setup')).toBeTruthy();
