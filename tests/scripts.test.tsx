@@ -11,28 +11,34 @@ const base = { scripts: [{ id: 's1', name: 'WiFi setup', content: 'STRING wifi',
 const mockedLoad = loadState as jest.Mock;
 const mockedSave = saveState as jest.Mock;
 
+const remotePayload = { id: 'remote-x', name: 'Remote x', content: '', tags: [], category: 'Remote', createdAt: '2026', updatedAt: '2026', source: 'pico' };
+
 describe('Scripts library', () => {
-  beforeEach(() => { jest.clearAllMocks(); mockedLoad.mockResolvedValue(structuredClone(base)); (listRemoteScripts as jest.Mock).mockResolvedValue([]); });
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedLoad.mockResolvedValue(structuredClone(base));
+    (listRemoteScripts as jest.Mock).mockResolvedValue([]);
+  });
 
   it('loads remote scripts and displays local and remote entries', async () => {
-    (listRemoteScripts as jest.Mock).mockResolvedValue([{ id: 'remote-x', name: 'Remote x', content: '', tags: [], category: 'Remote', createdAt: '2026', updatedAt: '2026', source: 'pico' }]);
-    const { getByText } = render(<Scripts />);
-    await waitFor(() => expect(getByText('WiFi setup')).toBeTruthy());
-    expect(getByText('Remote x')).toBeTruthy();
+    (listRemoteScripts as jest.Mock).mockResolvedValue([remotePayload]);
+    const { findByText } = render(<Scripts />);
+    expect(await findByText('WiFi setup')).toBeTruthy();
+    expect(await findByText('Remote x')).toBeTruthy();
     expect(mockedSave).toHaveBeenCalled();
   });
 
   it('filters scripts by name and tags', async () => {
-    const { getByPlaceholderText, getByText, queryByText } = render(<Scripts />);
-    await waitFor(() => expect(getByText('WiFi setup')).toBeTruthy());
+    const { getByPlaceholderText, findByText, queryByText } = render(<Scripts />);
+    expect(await findByText('WiFi setup')).toBeTruthy();
     fireEvent.changeText(getByPlaceholderText('Search scripts, tags…'), 'wifi');
     expect(getByText('WiFi setup')).toBeTruthy();
     expect(queryByText('Remote payload')).toBeNull();
   });
 
   it('creates and saves a local script', async () => {
-    const { getByText } = render(<Scripts />);
-    await waitFor(() => expect(getByText('WiFi setup')).toBeTruthy());
+    const { findByText, getByText } = render(<Scripts />);
+    expect(await findByText('WiFi setup')).toBeTruthy();
     fireEvent.press(getByText('＋'));
     await waitFor(() => expect(newScript).toHaveBeenCalled());
     expect(mockedSave).toHaveBeenCalled();
@@ -40,8 +46,8 @@ describe('Scripts library', () => {
 
   it('records a successful execution', async () => {
     (executeOnPico as jest.Mock).mockResolvedValue(undefined);
-    const { getByText } = render(<Scripts />);
-    await waitFor(() => expect(getByText('WiFi setup')).toBeTruthy());
+    const { findByText, getByText } = render(<Scripts />);
+    expect(await findByText('WiFi setup')).toBeTruthy();
     fireEvent.press(getByText('▶'));
     await waitFor(() => expect(executeOnPico).toHaveBeenCalledWith(expect.objectContaining({ id: 'd1' }), 'STRING wifi'));
     const saved = mockedSave.mock.calls.at(-1)[0];
@@ -50,8 +56,8 @@ describe('Scripts library', () => {
 
   it('records a failed execution', async () => {
     (executeOnPico as jest.Mock).mockRejectedValue(new Error('offline'));
-    const { getByText } = render(<Scripts />);
-    await waitFor(() => expect(getByText('WiFi setup')).toBeTruthy());
+    const { findByText, getByText } = render(<Scripts />);
+    expect(await findByText('WiFi setup')).toBeTruthy();
     fireEvent.press(getByText('▶'));
     await waitFor(() => expect(executeOnPico).toHaveBeenCalled());
     const saved = mockedSave.mock.calls.at(-1)[0];
@@ -60,15 +66,16 @@ describe('Scripts library', () => {
 
   it('does not execute an empty script', async () => {
     mockedLoad.mockResolvedValue({ ...structuredClone(base), scripts: [{ ...base.scripts[0], content: '' }] });
-    const { getByText } = render(<Scripts />);
-    await waitFor(() => expect(getByText('WiFi setup')).toBeTruthy());
+    const { findByText, getByText } = render(<Scripts />);
+    expect(await findByText('WiFi setup')).toBeTruthy();
     fireEvent.press(getByText('▶'));
     expect(executeOnPico).not.toHaveBeenCalled();
   });
 
   it('does not delete remote scripts', async () => {
-    const { getByText } = render(<Scripts />);
-    await waitFor(() => expect(getByText('Remote payload')).toBeTruthy());
+    (listRemoteScripts as jest.Mock).mockResolvedValue([{ ...base.scripts[1] }]);
+    const { findByText, getByText } = render(<Scripts />);
+    expect(await findByText('Remote payload')).toBeTruthy();
     fireEvent.press(getByText('×'));
     expect(mockedSave).toHaveBeenCalledTimes(1);
   });
