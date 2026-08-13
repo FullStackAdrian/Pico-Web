@@ -1,18 +1,19 @@
-name: Pico Web tests
+name: Pico Web backend CI (legacy workflow)
+
 on:
   push:
     branches: [master, 'agent/**']
   pull_request:
+
 jobs:
-  frontend-tests:
+  backend-tests:
+    name: Backend tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: 20
-      - run: npm install --no-audit --no-fund
-      - run: npm run typecheck
-      - run: npm run test:coverage
-      - run: python3 -m pip install -r backend/requirements.txt
-      - run: python3 -m pytest backend/tests -q --cov=backend --cov-report=term-missing --cov-fail-under=80
+          python-version: '3.12'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r backend/requirements.txt
+      - run: python -m pytest backend/tests -q --cov=backend --cov-report=term-missing --cov-fail-under=80
