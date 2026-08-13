@@ -1,34 +1,37 @@
-# Pico Web Mobile
+# Pico Web
 
-Expo/React Native frontend for Pico-Web. The legacy browser frontend has been replaced by a mobile-first application structure while the existing Pico/Flask workspace remains untouched.
+Expo/React Native frontend plus a lightweight FastAPI backend for managing Pico scripts and devices.
 
-## Included frontend features
+## Architecture
 
-- Dashboard and device reachability status
-- Script library with search
-- Local script creation, editing, tagging and deletion
-- Remote script discovery through the existing `/list-files` endpoint
-- Remote script execution through the existing Pico `/msg=` endpoint
-- Local execution history
-- Payload catalogue with tags and descriptions
-- Device management and connection settings
-- Wi-Fi configuration UI (stored/validated locally; no Pico endpoint is changed)
-- Upload UI with an explicit backend capability boundary
-- Backend adapter describing available/missing capabilities
-- Local identity/authentication boundary without pretending it is server security
-- Responsive Expo layout suitable for Android/iOS and web
+- `app/`: Expo Router frontend.
+- `src/`: frontend API, models and local storage.
+- `backend/`: FastAPI HTTP/WebSocket API.
+- `assets/rpi-pico-workspace/`: minimal Pico firmware; deliberately unchanged by the server migration.
 
-## Backend boundary
+The old `assets/flask/` service has been removed. The Pico firmware remains minimal: the FastAPI service owns application state, script management, execution history, payloads, device configuration and API orchestration.
 
-No Pico firmware/backend feature was added. The microcontroller stays minimal for speed. Operations that require new server state or privileged device changes are represented in the UI and adapter, but remain disabled until the corresponding backend endpoint exists.
+## Backend
 
-The current firmware/API supports reachability and execution; the existing Flask service supports script listing and reading. Upload/delete, telemetry/WebSocket, remote authentication and device/Wi-Fi management are intentionally deferred.
+```bash
+cd backend
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+uvicorn backend.app:app --reload
+```
 
-## Run
+Run backend tests from the repository root:
+
+```bash
+pytest backend/tests -q --cov=backend --cov-report=term-missing
+```
+
+The API is versioned under `/api/v1` and exposes script CRUD/content/upload/execute, execution history, device CRUD, payload CRUD, Wi-Fi validation/configuration, authentication and a WebSocket endpoint.
+
+## Frontend
 
 ```bash
 npm install
 npx expo start
 ```
-
-This branch is intentionally an app-first refactor: the Pico firmware and its bundled Python dependencies remain in `assets/rpi-pico-workspace`.
