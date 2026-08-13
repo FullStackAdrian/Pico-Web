@@ -1,19 +1,11 @@
-name: Expo frontend tests
-
+name: Pico Web tests
 on:
   push:
     branches: [master, 'agent/**']
   pull_request:
-
 jobs:
   frontend-tests:
     runs-on: ubuntu-latest
-    env:
-      EXPO_ROUTER_APP_ROOT: ./app
-      EXPO_ROUTER_IMPORT_MODE: sync
-    defaults:
-      run:
-        working-directory: .
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,3 +14,5 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
       - run: npm run test:coverage
+      - run: python3 -m pip install -r backend/requirements.txt
+      - run: python3 -m pytest backend/tests -q --cov=backend --cov-report=term-missing --cov-fail-under=80
