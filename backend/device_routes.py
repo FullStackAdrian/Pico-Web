@@ -23,6 +23,9 @@ class PayloadIn(BaseModel):
 def serialize_device(x: Device):
     return {'id': x.id, 'name': x.name, 'pico_url': decrypt(x.pico_url_encrypted), 'api_url': decrypt(x.api_url_encrypted), 'status': x.status}
 
+def serialize_payload(x: Payload):
+    return {'id': x.id, 'name': x.name, 'description': x.description, 'tags': x.tags, 'script_id': x.script_id}
+
 @router.get('/devices')
 def devices(_: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return [serialize_device(x) for x in db.scalars(select(Device)).all()]
@@ -55,13 +58,13 @@ def delete_device(i: str, _: User = Depends(get_current_user), db: Session = Dep
 
 @router.get('/payloads')
 def payloads(_: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return [x.__dict__ | {} for x in db.scalars(select(Payload)).all()]
+    return [serialize_payload(x) for x in db.scalars(select(Payload)).all()]
 
 @router.post('/payloads', status_code=201)
 def create_payload(data: PayloadIn, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
     payload = Payload(id='payload-' + uuid.uuid4().hex, **data.model_dump())
     db.add(payload); db.commit(); db.refresh(payload)
-    return {'id': payload.id, **data.model_dump()}
+    return serialize_payload(payload)
 
 @router.delete('/payloads/{i}', status_code=204)
 def delete_payload(i: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
