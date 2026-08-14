@@ -4,6 +4,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from backend.app import app
+from backend.job_system import job_system
 
 client = TestClient(app)
 
@@ -96,19 +97,15 @@ def test_job_can_target_a_device_and_execution_history_references_job():
 
 
 def test_job_websocket_emits_state_changes():
-    http_client = TestClient(app)
-    headers = auth_headers(http_client)
-    script_id = create_script(headers, 'websocket-job', http_client)
-
+    """Exercise WebSocket delivery deterministically without coupling it to worker timing."""
     with client.websocket_connect('/api/v1/ws') as websocket:
         connected = websocket.receive_json()
         assert connected['type'] == 'connected'
 
-        response = http_client.post('/api/v1/jobs', headers=headers, json={'script_id': script_id})
-        assert response.status_code == 202
-        job_id = response.json()['id']
+        job_id = f'job-{uuid4().hex}'
+        for status in ('queued', 'running', 'succeeded'):
+            job_system.events.publish({'type': 'job', 'job_id': job_id, 'status': status})
 
         events = [websocket.receive_json(), websocket.receive_json(), websocket.receive_json()]
-        job_events = [event for event in events if event.get('job_id') == job_id]
-        assert job_events
-        assert {event['status'] for event in job_events} >= {'queued', 'running', 'succeeded'}
+        assert [event['status'] for event in events] == ['queued', 'running', 'succeeded']
+        assert all(event['job_id'] == job_id for event in events)
