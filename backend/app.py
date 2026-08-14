@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi import HTTPException
 from backend.db import init_db
 from backend.routes import router
 
@@ -11,6 +12,12 @@ init_db()
 
 app = FastAPI(title="Pico Web API", version="2.0.0")
 app.include_router(router, prefix="/api/v1")
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_: Request, exc: HTTPException):
+    message = exc.detail if isinstance(exc.detail, str) else "Request failed"
+    code_by_status = {400: "BAD_REQUEST", 401: "UNAUTHORIZED", 403: "FORBIDDEN", 404: "NOT_FOUND", 409: "CONFLICT", 422: "UNPROCESSABLE_ENTITY"}
+    return JSONResponse(status_code=exc.status_code, headers=exc.headers, content={"error": {"code": code_by_status.get(exc.status_code, "HTTP_ERROR"), "message": message}})
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(_: Request, exc: RequestValidationError):
