@@ -8,26 +8,26 @@ from backend.app import app
 client = TestClient(app)
 
 
-def auth_headers():
+def auth_headers(client_instance=client):
     username = f"jobs-{uuid4().hex[:10]}"
     password = "strong-password-123"
-    assert client.post('/api/v1/auth/register', json={'username': username, 'password': password}).status_code == 201
-    login = client.post('/api/v1/auth/login', json={'username': username, 'password': password})
+    assert client_instance.post('/api/v1/auth/register', json={'username': username, 'password': password}).status_code == 201
+    login = client_instance.post('/api/v1/auth/login', json={'username': username, 'password': password})
     assert login.status_code == 200
     return {'Authorization': f"Bearer {login.json()['access_token']}"}
 
 
-def create_script(headers, name='job-script'):
-    response = client.post('/api/v1/scripts', headers=headers, json={'name': name, 'content': 'HELLO'})
+def create_script(headers, name='job-script', client_instance=client):
+    response = client_instance.post('/api/v1/scripts', headers=headers, json={'name': name, 'content': 'HELLO'})
     assert response.status_code == 201
     return response.json()['id']
 
 
-def wait_for_state(headers, job_id, expected, timeout=3):
+def wait_for_state(headers, job_id, expected, timeout=3, client_instance=client):
     deadline = time.time() + timeout
     last = None
     while time.time() < deadline:
-        response = client.get(f'/api/v1/jobs/{job_id}', headers=headers)
+        response = client_instance.get(f'/api/v1/jobs/{job_id}', headers=headers)
         assert response.status_code == 200
         last = response.json()['status']
         if last in expected:
@@ -96,14 +96,15 @@ def test_job_can_target_a_device_and_execution_history_references_job():
 
 
 def test_job_websocket_emits_state_changes():
-    headers = auth_headers()
-    script_id = create_script(headers, 'websocket-job')
+    http_client = TestClient(app)
+    headers = auth_headers(http_client)
+    script_id = create_script(headers, 'websocket-job', http_client)
 
     with client.websocket_connect('/api/v1/ws') as websocket:
         connected = websocket.receive_json()
         assert connected['type'] == 'connected'
 
-        response = client.post('/api/v1/jobs', headers=headers, json={'script_id': script_id})
+        response = http_client.post('/api/v1/jobs', headers=headers, json={'script_id': script_id})
         assert response.status_code == 202
         job_id = response.json()['id']
 
