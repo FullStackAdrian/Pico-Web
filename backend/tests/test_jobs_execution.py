@@ -40,7 +40,6 @@ def wait_for_state(headers, job_id, expected, timeout=3, client_instance=client)
 def test_create_job_is_queued_and_has_lifecycle_fields():
     headers = auth_headers()
     script_id = create_script(headers)
-
     response = client.post('/api/v1/jobs', headers=headers, json={'script_id': script_id})
     assert response.status_code == 202
     job = response.json()
@@ -51,23 +50,19 @@ def test_create_job_is_queued_and_has_lifecycle_fields():
     assert 'started_at' in job
     assert 'finished_at' in job
     assert 'error' in job
-
     assert wait_for_state(headers, job['id'], {'succeeded'}) == 'succeeded'
 
 
 def test_multiple_jobs_are_enqueued_and_history_is_persistent():
     headers = auth_headers()
     script_ids = [create_script(headers, f'job-{i}') for i in range(3)]
-
     response = client.post('/api/v1/jobs/batch', headers=headers, json={'script_ids': script_ids})
     assert response.status_code == 202
     jobs = response.json()['jobs']
     assert len(jobs) == 3
     assert {job['script_id'] for job in jobs} == set(script_ids)
-
     for job in jobs:
         assert wait_for_state(headers, job['id'], {'succeeded'}) == 'succeeded'
-
     history = client.get('/api/v1/jobs', headers=headers)
     assert history.status_code == 200
     assert {job['id'] for job in history.json()} >= {job['id'] for job in jobs}
@@ -83,12 +78,10 @@ def test_job_can_target_a_device_and_execution_history_references_job():
     )
     assert device.status_code == 201
     device_id = device.json()['id']
-
     response = client.post('/api/v1/jobs', headers=headers, json={'script_id': script_id, 'device_id': device_id})
     assert response.status_code == 202
     job_id = response.json()['id']
     assert wait_for_state(headers, job_id, {'succeeded'}) == 'succeeded'
-
     history = client.get('/api/v1/executions', headers=headers)
     assert history.status_code == 200
     execution = next(item for item in history.json() if item['script_id'] == script_id)
@@ -96,16 +89,32 @@ def test_job_can_target_a_device_and_execution_history_references_job():
     assert execution['job_id'] == job_id
 
 
-def test_job_websocket_emits_state_changes():
-    """Exercise WebSocket delivery deterministically without coupling it to worker timing."""
+def test_job_websocket_emits_real_job_lifecycle():
+    """Verify the real enqueue -> worker -> WebSocket -> execution lifecycle."""
+    headers = auth_headers()
+    script_id = create_script(headers, 'websocket-job')
+
     with client.websocket_connect('/api/v1/ws') as websocket:
         connected = websocket.receive_json()
         assert connected['type'] == 'connected'
 
-        job_id = f'job-{uuid4().hex}'
-        for status in ('queued', 'running', 'succeeded'):
-            job_system.events.publish({'type': 'job', 'job_id': job_id, 'status': status})
+        response = client.post('/api/v1/jobs', headers=headers, json={'script_id': script_id})
+        assert response.status_code == 202
+        job_id = response.json()['id']
 
-        events = [websocket.receive_json(), websocket.receive_json(), websocket.receive_json()]
+        events = []
+        deadline = time.time() + 3
+        while time.time() < deadline and 'succeeded' not in [event.get('status') for event in events]:
+            websocket.sock.settimeout(max(0.05, deadline - time.time()))
+            event = websocket.receive_json()
+            if event.get('type') == 'job' and event.get('job_id') == job_id:
+                events.append(event)
+
         assert [event['status'] for event in events] == ['queued', 'running', 'succeeded']
         assert all(event['job_id'] == job_id for event in events)
+
+    history = client.get('/api/v1/executions', headers=headers)
+    assert history.status_code == 200
+    execution = next(item for item in history.json() if item['script_id'] == script_id)
+    assert execution['job_id'] == job_id
+    assert execution['success'] is True
