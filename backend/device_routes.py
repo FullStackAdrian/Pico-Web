@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, HttpUrl
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from backend.db import get_db
 from backend.models import Device, Payload, User
@@ -52,17 +52,7 @@ def _status(device: Device, now: datetime | None = None) -> str:
 
 def serialize_device(x: Device, now: datetime | None = None):
     status = _status(x, now)
-    return {
-        'id': x.id,
-        'name': x.name,
-        'pico_url': decrypt(x.pico_url_encrypted),
-        'api_url': decrypt(x.api_url_encrypted),
-        'status': status,
-        'group_name': x.group_name,
-        'tags': x.tags or [],
-        'last_seen': x.last_seen.isoformat() if x.last_seen else None,
-        'firmware': x.firmware,
-    }
+    return {'id': x.id, 'name': x.name, 'pico_url': decrypt(x.pico_url_encrypted), 'api_url': decrypt(x.api_url_encrypted), 'status': status, 'group_name': x.group_name, 'tags': x.tags or [], 'last_seen': x.last_seen.isoformat() if x.last_seen else None, 'firmware': x.firmware}
 
 def serialize_metrics(x: Device):
     metrics = dict(x.metrics or {})
@@ -83,27 +73,16 @@ def _validate_tags(tags: list[str]) -> list[str]:
     return cleaned
 
 @router.get('/devices')
-def devices(
-    status: str | None = Query(default=None, pattern='^(online|offline|unknown)$'),
-    group: str | None = None,
-    tag: str | None = None,
-    search: str | None = Query(default=None, max_length=100),
-    _: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def devices(status: str | None = Query(default=None, pattern='^(online|offline|unknown)$'), group: str | None = None, tag: str | None = None, search: str | None = Query(default=None, max_length=100), _: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.scalars(select(Device).order_by(Device.name)).all()
     now = datetime.now(timezone.utc)
     result = []
     for device in rows:
         item = serialize_device(device, now)
-        if status and item['status'] != status:
-            continue
-        if group and item['group_name'] != group:
-            continue
-        if tag and tag.lower() not in item['tags']:
-            continue
-        if search and search.lower() not in item['name'].lower() and search.lower() not in item['id'].lower():
-            continue
+        if status and item['status'] != status: continue
+        if group and item['group_name'] != group: continue
+        if tag and tag.lower() not in item['tags']: continue
+        if search and search.lower() not in item['name'].lower() and search.lower() not in item['id'].lower(): continue
         result.append(item)
     return result
 
@@ -113,16 +92,7 @@ def device_groups(_: User = Depends(get_current_user), db: Session = Depends(get
 
 @router.post('/devices', status_code=201)
 def create_device(data: DeviceIn, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    device = Device(
-        id='device-' + uuid.uuid4().hex,
-        name=data.name,
-        pico_url_encrypted=encrypt(str(data.pico_url)),
-        api_url_encrypted=encrypt(str(data.api_url)),
-        status='unknown',
-        group_name=data.group_name.strip() if data.group_name else None,
-        tags=_validate_tags(data.tags),
-        metrics={},
-    )
+    device = Device(id='device-' + uuid.uuid4().hex, name=data.name, pico_url_encrypted=encrypt(str(data.pico_url)), api_url_encrypted=encrypt(str(data.api_url)), status='unknown', group_name=data.group_name.strip() if data.group_name else None, tags=_validate_tags(data.tags), metrics={})
     db.add(device); db.commit(); db.refresh(device)
     return serialize_device(device)
 
@@ -136,11 +106,7 @@ def get_device(i: str, _: User = Depends(get_current_user), db: Session = Depend
 def update_device(i: str, data: DeviceIn, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
     device = db.get(Device, i)
     if not device: raise HTTPException(404, 'Device not found')
-    device.name = data.name
-    device.pico_url_encrypted = encrypt(str(data.pico_url))
-    device.api_url_encrypted = encrypt(str(data.api_url))
-    device.group_name = data.group_name.strip() if data.group_name else None
-    device.tags = _validate_tags(data.tags)
+    device.name = data.name; device.pico_url_encrypted = encrypt(str(data.pico_url)); device.api_url_encrypted = encrypt(str(data.api_url)); device.group_name = data.group_name.strip() if data.group_name else None; device.tags = _validate_tags(data.tags)
     db.commit(); db.refresh(device)
     return serialize_device(device)
 
@@ -168,15 +134,9 @@ def heartbeat(i: str, data: HeartbeatIn, _: User = Depends(get_current_user), db
     device = db.get(Device, i)
     if not device: raise HTTPException(404, 'Device not found')
     now = datetime.now(timezone.utc)
-    device.last_seen = now
-    device.status = 'online'
+    device.last_seen = now; device.status = 'online'
     if data.firmware is not None: device.firmware = data.firmware
-    device.metrics = {k: v for k, v in {
-        'uptime_seconds': data.uptime_seconds,
-        'free_memory': data.free_memory,
-        'temperature_c': data.temperature_c,
-        'wifi_rssi': data.wifi_rssi,
-    }.items() if v is not None}
+    device.metrics = {k: v for k, v in {'uptime_seconds': data.uptime_seconds, 'free_memory': data.free_memory, 'temperature_c': data.temperature_c, 'wifi_rssi': data.wifi_rssi}.items() if v is not None}
     db.commit(); db.refresh(device)
     return {'status': 'ok', 'device': serialize_device(device, now), 'metrics': serialize_metrics(device)}
 
