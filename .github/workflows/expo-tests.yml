@@ -1,4 +1,0 @@
-name: Legacy Expo tests (manual only)
-
-on:
-  workflow_dispatch:
