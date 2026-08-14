@@ -54,6 +54,11 @@ class Device(Base):
     pico_url_encrypted: Mapped[str] = mapped_column(Text)
     api_url_encrypted: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(32), default="unknown")
+    group_name: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    tags: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    firmware: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=dict)
 
 class Payload(Base):
     __tablename__ = "payloads"

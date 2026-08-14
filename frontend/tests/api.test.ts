@@ -1,4 +1,4 @@
-import { backendCapabilities, checkDevice, executeOnPico, listRemoteScripts } from '../src/api';
+import { backendCapabilities, checkDevice, createManagedDevice, deleteManagedDevice, executeOnPico, getDeviceMetrics, listManagedDevices, listRemoteScripts, updateManagedDevice } from '../src/api';
 import type { Device } from '../src/models';
 
 const device: Device = { id: 'd1', name: 'Test Pico', picoUrl: 'http://pico.local', apiUrl: 'http://api.local', status: 'unknown' };
@@ -41,7 +41,27 @@ describe('api', () => {
     await expect(checkDevice(device)).resolves.toBe(false);
   });
 
-  it('documents the minimal Pico capability boundary', () => {
-    expect(backendCapabilities).toEqual({ list: true, execute: true, read: false, upload: false, delete: false, telemetry: false, wifi: false, auth: false, websocket: false });
+  it('maps managed devices and supports device metrics', async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => [{ id: 'd2', name: 'Lab', pico_url: 'http://pico', api_url: 'http://api', status: 'online', group_name: 'lab', tags: ['test'], last_seen: '2026-08-14T10:00:00Z', firmware: '1.2.0' }] })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'online', temperature_c: 40.5, free_memory: 12000, wifi_rssi: -50, uptime_seconds: 12 }) });
+    const devices = await listManagedDevices({ status: 'online', group: 'lab' });
+    expect(devices[0]).toMatchObject({ id: 'd2', groupName: 'lab', tags: ['test'], firmware: '1.2.0' });
+    expect(await getDeviceMetrics('d2')).toMatchObject({ temperature_c: 40.5, free_memory: 12000 });
+    expect(mockFetch.mock.calls[0][0]).toContain('status=online');
+  });
+
+  it('creates, updates and deletes managed devices', async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'd3', name: 'New', pico_url: 'http://pico', api_url: 'http://api', status: 'unknown', tags: [], group_name: null }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'd3', name: 'Updated', pico_url: 'http://pico', api_url: 'http://api', status: 'unknown', tags: ['lab'], group_name: 'lab' }) })
+      .mockResolvedValueOnce({ ok: true });
+    expect((await createManagedDevice({ name: 'New', picoUrl: 'http://pico', apiUrl: 'http://api' })).id).toBe('d3');
+    expect((await updateManagedDevice('d3', { name: 'Updated', groupName: 'lab', tags: ['lab'] })).name).toBe('Updated');
+    await expect(deleteManagedDevice('d3')).resolves.toBeUndefined();
+  });
+
+  it('documents the device-management capability boundary', () => {
+    expect(backendCapabilities).toMatchObject({ list: true, execute: true, telemetry: true, auth: true, deviceManagement: true, heartbeat: true, metrics: true, groups: true });
   });
 });
