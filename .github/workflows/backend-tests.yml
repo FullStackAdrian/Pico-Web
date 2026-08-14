@@ -9,6 +9,24 @@ jobs:
   backend-tests:
     name: Backend tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pico
+          POSTGRES_PASSWORD: pico
+          POSTGRES_DB: pico_web
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U pico -d pico_web"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql+psycopg://pico:pico@localhost:5432/pico_web
+      JWT_SECRET: test-only-jwt-secret
+      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
