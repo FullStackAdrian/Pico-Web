@@ -107,14 +107,7 @@ def test_job_websocket_emits_state_changes():
         assert response.status_code == 202
         job_id = response.json()['id']
 
-        events = []
-        deadline = time.time() + 3
-        while time.time() < deadline and not any(event.get('job_id') == job_id and event.get('status') == 'succeeded' for event in events):
-            websocket.client.sock.settimeout(max(0.05, deadline - time.time()))
-            try:
-                events.append(websocket.receive_json())
-            except Exception:
-                break
-
-        assert any(event.get('job_id') == job_id for event in events)
-        assert any(event.get('job_id') == job_id and event.get('status') == 'succeeded' for event in events)
+        events = [websocket.receive_json(), websocket.receive_json(), websocket.receive_json()]
+        job_events = [event for event in events if event.get('job_id') == job_id]
+        assert job_events
+        assert {event['status'] for event in job_events} >= {'queued', 'running', 'succeeded'}
