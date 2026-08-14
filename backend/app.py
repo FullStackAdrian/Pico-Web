@@ -1,3 +1,4 @@
+import asyncio
 import os
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
@@ -33,9 +34,26 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     queue = job_system.events.subscribe()
     try:
+        await websocket.send_json({"type": "connected"})
         while True:
-            event = await queue.get()
-            await websocket.send_json(event)
+            event_task = asyncio.create_task(queue.get())
+            receive_task = asyncio.create_task(websocket.receive())
+            done, pending = await asyncio.wait(
+                {event_task, receive_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+            completed = done.pop()
+            result = completed.result()
+            if completed is receive_task:
+                message_type = result.get("type")
+                if message_type == "websocket.disconnect":
+                    break
+                if message_type == "websocket.receive":
+                    continue
+            else:
+                await websocket.send_json(result)
     except WebSocketDisconnect:
         pass
     finally:
