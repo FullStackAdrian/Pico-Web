@@ -4,12 +4,11 @@ Expo/React Native frontend plus a lightweight FastAPI backend for managing Pico 
 
 ## Architecture
 
-- `app/`: Expo Router frontend.
-- `src/`: frontend API, models and local storage.
+- `frontend/`: complete Expo/React Native application, including routes, source, tests and Expo configuration.
 - `backend/`: FastAPI HTTP/WebSocket API.
-- `assets/rpi-pico-workspace/`: minimal Pico firmware; deliberately unchanged by the server migration.
+- `rpi-pico-workspace/`: minimal Raspberry Pi Pico firmware and bundled CircuitPython libraries.
 
-The old `assets/flask/` service has been removed. The Pico firmware remains minimal: the FastAPI service owns application state, script management, execution history, payloads, device configuration and API orchestration.
+The Pico firmware remains minimal: the FastAPI service owns application state, script management, execution history, payloads, device configuration and API orchestration.
 
 ## Backend
 
@@ -32,6 +31,9 @@ The API is versioned under `/api/v1` and exposes script CRUD/content/upload/exec
 ## Frontend
 
 ```bash
+cd frontend
 npm install
 npx expo start
 ```
+
+The frontend CI runs from `frontend/` and executes type checking plus the existing Jest/Expo coverage suite.
