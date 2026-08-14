@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { backendCapabilities, checkDevice, clearBackendAccessToken, createManagedDevice, deleteManagedDevice, executeOnPico, getDeviceMetrics, listManagedDevices, listRemoteScripts, setBackendAccessToken, updateManagedDevice } from '../src/api';
+import { backendCapabilities, cancelJob, checkDevice, clearBackendAccessToken, createJob, createJobs, createManagedDevice, deleteManagedDevice, executeOnPico, getDeviceMetrics, getJob, listJobs, listManagedDevices, listRemoteScripts, setBackendAccessToken, updateManagedDevice } from '../src/api';
 import type { Device } from '../src/models';
 
 const device: Device = { id: 'd1', name: 'Test Pico', picoUrl: 'http://pico.local', apiUrl: 'http://api.local', status: 'unknown' };
@@ -29,6 +29,15 @@ describe('api', () => {
     const options = mockFetch.mock.calls[0][1];
     expect(options.headers.get('Authorization')).toBe('Bearer token-123');
     expect(options.headers.get('Accept')).toBe('application/json');
+  });
+
+  it('adds content type when a request has a body', async () => {
+    mockFetch.mockResolvedValue(okJson({ id: 'job-1', status: 'queued' }));
+    await createJob({ scriptId: 'script-1', deviceId: 'd1' });
+    const options = mockFetch.mock.calls[0][1];
+    expect(options.method).toBe('POST');
+    expect(options.headers.get('Content-Type')).toBe('application/json');
+    expect(JSON.parse(options.body)).toEqual({ script_id: 'script-1', device_id: 'd1' });
   });
 
   it('lists remote scripts and maps them to typed scripts', async () => {
@@ -81,6 +90,12 @@ describe('api', () => {
     expect(mockFetch.mock.calls[0][0]).toContain('tag=test');
   });
 
+  it('lists managed devices without filters', async () => {
+    mockFetch.mockResolvedValue(okJson([]));
+    await expect(listManagedDevices()).resolves.toEqual([]);
+    expect(mockFetch.mock.calls[0][0]).toBe('http://localhost:8000/api/v1/devices');
+  });
+
   it('maps missing backend tags to an empty list', async () => {
     mockFetch.mockResolvedValue(okJson([{ id: 'd4', name: 'No tags', pico_url: 'http://pico', api_url: 'http://api', status: 'unknown', tags: null }]));
     await expect(listManagedDevices()).resolves.toEqual([expect.objectContaining({ tags: [] })]);
@@ -96,7 +111,40 @@ describe('api', () => {
     await expect(deleteManagedDevice('d3')).resolves.toBeUndefined();
   });
 
-  it('documents the device-management capability boundary', () => {
-    expect(backendCapabilities).toMatchObject({ list: true, execute: true, telemetry: true, auth: true, deviceManagement: true, heartbeat: true, metrics: true, groups: true });
+  it('creates a single job and normalizes an omitted device id', async () => {
+    const job = { id: 'job-1', script_id: 'script-1', device_id: null, status: 'queued' };
+    mockFetch.mockResolvedValue(okJson(job));
+    await expect(createJob({ scriptId: 'script-1' })).resolves.toEqual(job);
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({ script_id: 'script-1', device_id: null });
+  });
+
+  it('creates a batch of jobs', async () => {
+    const jobs = [{ id: 'job-1', script_id: 's1', status: 'queued' }, { id: 'job-2', script_id: 's2', status: 'queued' }];
+    mockFetch.mockResolvedValue(okJson({ jobs }));
+    await expect(createJobs(['s1', 's2'], 'd1')).resolves.toEqual(jobs);
+    expect(mockFetch.mock.calls[0][0]).toContain('/jobs/batch');
+  });
+
+  it('lists and retrieves jobs', async () => {
+    const job = { id: 'job-1', script_id: 's1', status: 'succeeded' };
+    mockFetch.mockResolvedValueOnce(okJson([job])).mockResolvedValueOnce(okJson(job));
+    await expect(listJobs()).resolves.toEqual([job]);
+    await expect(getJob('job/1')).resolves.toEqual(job);
+    expect(mockFetch.mock.calls[1][0]).toContain('/jobs/job%2F1');
+  });
+
+  it('cancels a job', async () => {
+    const job = { id: 'job-1', script_id: 's1', status: 'cancelled' };
+    mockFetch.mockResolvedValue(okJson(job));
+    await expect(cancelJob('job-1')).resolves.toEqual(job);
+    expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('documents the device and job capability boundary', () => {
+    expect(backendCapabilities).toMatchObject({
+      list: true, execute: true, telemetry: true, auth: true, websocket: true,
+      jobs: true, queue: true, multipleExecution: true, jobHistory: true,
+      deviceManagement: true, heartbeat: true, metrics: true, groups: true,
+    });
   });
 });
