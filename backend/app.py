@@ -32,15 +32,16 @@ async def unhandled_exception_handler(_: Request, __: Exception):
 @app.websocket("/api/v1/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    queue = job_system.events.subscribe()
+    client_queue = job_system.events.subscribe()
     try:
         await websocket.send_json({"type": "connected"})
         while True:
-            await websocket.send_json(await queue.get())
+            event = await asyncio.to_thread(client_queue.get)
+            await websocket.send_json(event)
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
     finally:
-        job_system.events.unsubscribe(queue)
+        job_system.events.unsubscribe(client_queue)
 
 @app.get("/api/v1/health")
 def health():
