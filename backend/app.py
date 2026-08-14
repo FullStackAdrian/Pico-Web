@@ -1,4 +1,3 @@
-import asyncio
 import os
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
@@ -35,17 +34,8 @@ async def websocket_endpoint(websocket: WebSocket):
     queue = job_system.events.subscribe()
     try:
         while True:
-            event_task = asyncio.create_task(queue.get())
-            receive_task = asyncio.create_task(websocket.receive_json())
-            done, pending = await asyncio.wait({event_task, receive_task}, return_when=asyncio.FIRST_COMPLETED)
-            for task in pending:
-                task.cancel()
-            completed = next(iter(done))
-            result = completed.result()
-            if completed is receive_task:
-                await websocket.send_json({"type": "ack", "received": result})
-            else:
-                await websocket.send_json(result)
+            event = await queue.get()
+            await websocket.send_json(event)
     except WebSocketDisconnect:
         pass
     finally:
