@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { createManagedDevice, deleteManagedDevice, getDeviceMetrics, listManagedDevices, updateManagedDevice, type DeviceMetrics, type ManagedDevice } from '../../src/api';
 import { loadState } from '../../src/storage';
-import type { Device } from '../../src/models';
 
 function statusLabel(status: ManagedDevice['status']) { return status === 'online' ? 'ONLINE' : status === 'offline' ? 'OFFLINE' : 'UNKNOWN'; }
 function metric(value: number | undefined, suffix = '') { return value === undefined ? '—' : `${value}${suffix}`; }
@@ -39,10 +38,14 @@ export default function DeviceScreen() {
 
   const selectedDevice = useMemo(() => devices.find((item) => item.id === selected) ?? null, [devices, selected]);
 
-  async function loadMetrics(deviceId: string) {
+  const loadMetrics = useCallback(async (deviceId: string) => {
     try { const value = await getDeviceMetrics(deviceId); setMetrics((current) => ({ ...current, [deviceId]: value })); }
     catch { /* Device may not expose telemetry yet. */ }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (selectedDevice) void loadMetrics(selectedDevice.id);
+  }, [selectedDevice, loadMetrics]);
 
   function startCreate() {
     setSelected(null); setEditing(true); setForm({ name: '', picoUrl: '', apiUrl: '', groupName: '', tags: '' });
@@ -76,7 +79,7 @@ export default function DeviceScreen() {
     <View style={styles.summary}>{[['All', devices.length], ['Online', devices.filter((d) => d.status === 'online').length], ['Offline', devices.filter((d) => d.status === 'offline').length]].map(([label, value]) => <View key={String(label)} style={styles.summaryCard}><Text style={styles.summaryValue}>{value}</Text><Text style={styles.muted}>{label}</Text></View>)}</View>
     {editing && <View style={styles.panel}><Text style={styles.section}>{selectedDevice ? 'Edit device' : 'Add device'}</Text>{[['name','Name'],['picoUrl','Pico URL'],['apiUrl','API URL'],['groupName','Group'],['tags','Tags (comma separated)']].map(([key, label]) => <TextInput key={key} value={form[key as keyof typeof form]} onChangeText={(value) => setForm((current) => ({ ...current, [key]: value }))} placeholder={label} placeholderTextColor="#71717a" style={styles.input} autoCapitalize="none" />)}<View style={styles.row}><Pressable style={styles.primary} onPress={() => void save()}><Text style={styles.primaryText}>Save</Text></Pressable><Pressable style={styles.secondary} onPress={() => setEditing(false)}><Text style={styles.secondaryText}>Cancel</Text></Pressable></View></View>}
     <Text style={styles.section}>Fleet</Text>
-    {devices.length === 0 ? <View style={styles.panel}><Text style={styles.muted}>No devices registered.</Text></View> : devices.map((device) => { const m = metrics[device.id]; return <Pressable key={device.id} style={[styles.deviceCard, selected === device.id && styles.selectedCard]} onPress={() => { setSelected(device.id); void loadMetrics(device.id); }}><View style={styles.cardHeader}><View style={{ flex: 1 }}><Text style={styles.deviceName}>{device.name}</Text><Text style={styles.muted}>{device.id}{device.groupName ? ` · ${device.groupName}` : ''}</Text></View><View style={styles.status}><View style={[styles.dot, { backgroundColor: device.status === 'online' ? '#4ade80' : device.status === 'offline' ? '#f87171' : '#a1a1aa' }]} /><Text style={styles.statusText}>{statusLabel(device.status)}</Text></View></View><View style={styles.tags}>{device.tags.map((tag) => <Text key={tag} style={styles.tag}>#{tag}</Text>)}</View><View style={styles.metrics}><View><Text style={styles.metricValue}>{metric(m?.temperature_c, '°C')}</Text><Text style={styles.muted}>Temperature</Text></View><View><Text style={styles.metricValue}>{metric(m?.free_memory, ' B')}</Text><Text style={styles.muted}>Free memory</Text></View><View><Text style={styles.metricValue}>{metric(m?.wifi_rssi, ' dBm')}</Text><Text style={styles.muted}>Wi‑Fi</Text></View><View><Text style={styles.metricValue}>{metric(m?.uptime_seconds, ' s')}</Text><Text style={styles.muted}>Uptime</Text></View></View>{device.firmware && <Text style={styles.firmware}>Firmware {device.firmware}</Text>}{selected === device.id && <View style={styles.row}><Pressable style={styles.secondary} onPress={() => startEdit(device)}><Text style={styles.secondaryText}>Edit</Text></Pressable><Pressable style={styles.danger} onPress={() => remove(device)}><Text style={styles.dangerText}>Delete</Text></Pressable></View>}</Pressable>; })}
+    {devices.length === 0 ? <View style={styles.panel}><Text style={styles.muted}>No devices registered.</Text></View> : devices.map((device) => { const m = metrics[device.id]; return <Pressable key={device.id} style={[styles.deviceCard, selected === device.id && styles.selectedCard]} onPress={() => setSelected(device.id)}><View style={styles.cardHeader}><View style={{ flex: 1 }}><Text style={styles.deviceName}>{device.name}</Text><Text style={styles.muted}>{device.id}{device.groupName ? ` · ${device.groupName}` : ''}</Text></View><View style={styles.status}><View style={[styles.dot, { backgroundColor: device.status === 'online' ? '#4ade80' : device.status === 'offline' ? '#f87171' : '#a1a1aa' }]} /><Text style={styles.statusText}>{statusLabel(device.status)}</Text></View></View><View style={styles.tags}>{device.tags.map((tag) => <Text key={tag} style={styles.tag}>#{tag}</Text>)}</View><View style={styles.metrics}><View><Text style={styles.metricValue}>{metric(m?.temperature_c, '°C')}</Text><Text style={styles.muted}>Temperature</Text></View><View><Text style={styles.metricValue}>{metric(m?.free_memory, ' B')}</Text><Text style={styles.muted}>Free memory</Text></View><View><Text style={styles.metricValue}>{metric(m?.wifi_rssi, ' dBm')}</Text><Text style={styles.muted}>Wi‑Fi</Text></View><View><Text style={styles.metricValue}>{metric(m?.uptime_seconds, ' s')}</Text><Text style={styles.muted}>Uptime</Text></View></View>{device.firmware && <Text style={styles.firmware}>Firmware {device.firmware}</Text>}{selected === device.id && <View style={styles.row}><Pressable style={styles.secondary} onPress={() => startEdit(device)}><Text style={styles.secondaryText}>Edit</Text></Pressable><Pressable style={styles.danger} onPress={() => remove(device)}><Text style={styles.dangerText}>Delete</Text></Pressable></View>}</Pressable>; })}
   </ScrollView>;
 }
 
