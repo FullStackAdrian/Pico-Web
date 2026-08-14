@@ -18,21 +18,31 @@ export default function DeviceScreen() {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: '', picoUrl: '', apiUrl: '', groupName: '', tags: '' });
 
+  // Device loading is independent from device selection. Changing the selected
+  // device must not trigger another fleet request or create an effect loop.
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const remote = await listManagedDevices({ search: search.trim() || undefined, group: group.trim() || undefined });
       setDevices(remote);
       setBackendError(null);
-      if (remote.length && !selected) setSelected(remote[0].id);
+      setSelected((current) => {
+        if (current && remote.some((device) => device.id === current)) return current;
+        return remote[0]?.id ?? null;
+      });
     } catch (error) {
       setBackendError(error instanceof Error ? error.message : 'Backend unavailable');
       try {
         const local = await loadState();
-        setDevices(local.devices.map((item) => ({ ...item, tags: item.tags || [], groupName: item.groupName || null })));
-      } catch { setDevices([]); }
+        const localDevices = local.devices.map((item) => ({ ...item, tags: item.tags || [], groupName: item.groupName || null }));
+        setDevices(localDevices);
+        setSelected((current) => current && localDevices.some((device) => device.id === current) ? current : localDevices[0]?.id ?? null);
+      } catch {
+        setDevices([]);
+        setSelected(null);
+      }
     } finally { setLoading(false); setRefreshing(false); }
-  }, [group, search, selected]);
+  }, [group, search]);
 
   useEffect(() => { void load(); }, [load]);
 
