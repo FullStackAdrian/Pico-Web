@@ -1,4 +1,4 @@
-name: Expo frontend tests
+name: Pico Web frontend CI
 
 on:
   push:
@@ -7,13 +7,8 @@ on:
 
 jobs:
   frontend-tests:
+    name: Frontend tests
     runs-on: ubuntu-latest
-    env:
-      EXPO_ROUTER_APP_ROOT: ./app
-      EXPO_ROUTER_IMPORT_MODE: sync
-    defaults:
-      run:
-        working-directory: .
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
