@@ -1,3 +1,5 @@
+import queue
+import threading
 import time
 from uuid import uuid4
 
@@ -95,27 +97,55 @@ def test_job_websocket_emits_real_job_lifecycle():
     headers = auth_headers(http_client)
     script_id = create_script(headers, 'websocket-job', http_client)
 
-    # Keep the WebSocket session on its own TestClient portal. The HTTP
-    # request that enqueues the job must not share that portal: otherwise
-    # Starlette's blocking WebSocket receive can prevent the POST from being
-    # serviced by the same portal and the test appears to hang.
-    with ws_client.websocket_connect('/api/v1/ws') as websocket:
-        connected = websocket.receive_json()
-        assert connected['type'] == 'connected'
+    ready = threading.Event()
+    finished = threading.Event()
+    session_holder = {}
+    messages = queue.Queue()
 
-        response = http_client.post('/api/v1/jobs', headers=headers, json={'script_id': script_id})
-        assert response.status_code == 202
-        job_id = response.json()['id']
+    def websocket_reader():
+        try:
+            with ws_client.websocket_connect('/api/v1/ws') as websocket:
+                session_holder['session'] = websocket
+                connected = websocket.receive_json()
+                messages.put(connected)
+                ready.set()
+                while True:
+                    event = websocket.receive_json()
+                    messages.put(event)
+                    if event.get('status') == 'succeeded':
+                        return
+        except Exception as exc:
+            messages.put(exc)
+            ready.set()
+        finally:
+            finished.set()
 
-        events = []
-        deadline = time.time() + 3
-        while time.time() < deadline and 'succeeded' not in [event.get('status') for event in events]:
-            event = websocket.receive_json()
-            if event.get('type') == 'job' and event.get('job_id') == job_id:
-                events.append(event)
+    reader = threading.Thread(target=websocket_reader, daemon=True)
+    reader.start()
+    assert ready.wait(timeout=3), 'WebSocket did not connect'
 
-        assert [event['status'] for event in events] == ['queued', 'running', 'succeeded']
-        assert all(event['job_id'] == job_id for event in events)
+    connected = messages.get(timeout=1)
+    assert isinstance(connected, dict)
+    assert connected['type'] == 'connected'
+
+    response = http_client.post('/api/v1/jobs', headers=headers, json={'script_id': script_id})
+    assert response.status_code == 202
+    job_id = response.json()['id']
+
+    assert finished.wait(timeout=3), 'WebSocket did not receive the terminal job event'
+
+    events = []
+    while not messages.empty():
+        event = messages.get_nowait()
+        if isinstance(event, dict) and event.get('type') == 'job' and event.get('job_id') == job_id:
+            events.append(event)
+
+    if not finished.is_set():
+        session = session_holder.get('session')
+        if session:
+            session.close()
+    assert [event['status'] for event in events] == ['queued', 'running', 'succeeded']
+    assert all(event['job_id'] == job_id for event in events)
 
     history = http_client.get('/api/v1/executions', headers=headers)
     assert history.status_code == 200
