@@ -3,6 +3,7 @@ import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
+from threading import Lock
 from typing import Any
 
 from sqlalchemy import select
@@ -31,24 +32,41 @@ def serialize_job(job: Job) -> dict[str, Any]:
 
 
 class JobEventHub:
-    def __init__(self):
-        self._clients: set[tuple[asyncio.AbstractEventLoop, asyncio.Queue]] = set()
+    """Thread-safe event fan-out with queues owned by each WebSocket event loop."""
 
-    def subscribe(self):
+    def __init__(self):
+        self._clients: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Queue]] = {}
+        self._lock = Lock()
+
+    def subscribe(self) -> asyncio.Queue:
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
-        self._clients.add((loop, queue))
+        client_id = id(queue)
+        with self._lock:
+            self._clients[client_id] = (loop, queue)
         return queue
 
-    def unsubscribe(self, queue: asyncio.Queue):
-        self._clients = {(loop, item) for loop, item in self._clients if item is not queue}
+    def unsubscribe(self, queue: asyncio.Queue) -> None:
+        with self._lock:
+            self._clients.pop(id(queue), None)
 
-    def publish(self, event: dict[str, Any]):
-        for loop, queue in tuple(self._clients):
+    def publish(self, event: dict[str, Any]) -> None:
+        with self._lock:
+            clients = tuple(self._clients.items())
+
+        for client_id, (loop, queue) in clients:
             if loop.is_closed():
-                self._clients.discard((loop, queue))
+                with self._lock:
+                    self._clients.pop(client_id, None)
                 continue
-            loop.call_soon_threadsafe(queue.put_nowait, event)
+
+            # The queue belongs to the subscriber's loop. Always enqueue from
+            # that loop so publishers can safely be workers or other threads.
+            try:
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+            except RuntimeError:
+                with self._lock:
+                    self._clients.pop(client_id, None)
 
 
 class JobSystem:
