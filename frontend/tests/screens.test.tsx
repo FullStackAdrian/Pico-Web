@@ -138,7 +138,8 @@ describe('Device dashboard', () => {
     await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith('d1', expect.objectContaining({ name: 'Updated Pico' })));
 
     fireEvent.press(getByText('Delete'));
-    const alertCall = (Alert.alert as jest.Mock).mock.calls.at(-1);
+    const alertCalls = (Alert.alert as jest.Mock).mock.calls;
+    const alertCall = alertCalls[alertCalls.length - 1];
     expect(alertCall?.[0]).toBe('Delete device');
     const actions = alertCall?.[2] as Array<{ text: string; onPress?: () => void }>;
     expect(actions?.map((action) => action.text)).toEqual(['Cancel', 'Delete']);
