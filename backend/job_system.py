@@ -5,7 +5,6 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import WebSocket
 from sqlalchemy import select
 
 from backend.db import SessionLocal
@@ -39,7 +38,6 @@ class JobEventHub:
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
         self._clients.add((loop, queue))
-        queue.put_nowait({"type": "connected"})
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue):
@@ -47,6 +45,9 @@ class JobEventHub:
 
     def publish(self, event: dict[str, Any]):
         for loop, queue in tuple(self._clients):
+            if loop.is_closed():
+                self._clients.discard((loop, queue))
+                continue
             loop.call_soon_threadsafe(queue.put_nowait, event)
 
 
@@ -127,8 +128,6 @@ class JobSystem:
             db.add(execution)
             db.commit()
         try:
-            # The job layer owns orchestration. Device-specific transport is intentionally
-            # kept behind this boundary until the Pico execution protocol is introduced.
             duration_ms = int((time.monotonic() - started) * 1000)
             with SessionLocal() as db:
                 execution = db.scalar(select(Execution).where(Execution.job_id == job_id).order_by(Execution.started_at.desc()))
