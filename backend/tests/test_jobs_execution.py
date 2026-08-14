@@ -4,7 +4,6 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from backend.app import app
-from backend.job_system import job_system
 
 client = TestClient(app)
 
@@ -105,7 +104,6 @@ def test_job_websocket_emits_real_job_lifecycle():
         events = []
         deadline = time.time() + 3
         while time.time() < deadline and 'succeeded' not in [event.get('status') for event in events]:
-            websocket.sock.settimeout(max(0.05, deadline - time.time()))
             event = websocket.receive_json()
             if event.get('type') == 'job' and event.get('job_id') == job_id:
                 events.append(event)
