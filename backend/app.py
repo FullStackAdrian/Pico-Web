@@ -10,7 +10,7 @@ if os.getenv("ENVIRONMENT", "development") == "production" and (not os.getenv("D
     raise RuntimeError("DATABASE_URL, JWT_SECRET and ENCRYPTION_KEY are required in production")
 init_db()
 
-app = FastAPI(title="Pico Web API", version="2.0.0")
+app = FastAPI(title="Pico Web API", version="2.1.0")
 app.include_router(router, prefix="/api/v1")
 
 @app.exception_handler(HTTPException)
@@ -29,4 +29,4 @@ async def unhandled_exception_handler(_: Request, __: Exception):
 
 @app.get("/api/v1/health")
 def health():
-    return {"status": "ok", "capabilities": {"scripts": True, "websocket": True, "authentication": True, "postgresql": True}}
+    return {"status": "ok", "capabilities": {"scripts": True, "websocket": True, "authentication": True, "postgresql": True, "device_management": True, "heartbeat": True, "metrics": True, "groups": True}}

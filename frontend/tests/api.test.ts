@@ -1,14 +1,38 @@
-import { backendCapabilities, checkDevice, executeOnPico, listRemoteScripts } from '../src/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { backendCapabilities, checkDevice, clearBackendAccessToken, createManagedDevice, deleteManagedDevice, executeOnPico, getDeviceMetrics, listManagedDevices, listRemoteScripts, setBackendAccessToken, updateManagedDevice } from '../src/api';
 import type { Device } from '../src/models';
 
 const device: Device = { id: 'd1', name: 'Test Pico', picoUrl: 'http://pico.local', apiUrl: 'http://api.local', status: 'unknown' };
 const mockFetch = (globalThis as unknown as { fetch: jest.Mock }).fetch = jest.fn();
 
+function okJson(body: unknown) { return { ok: true, status: 200, json: async () => body }; }
+
 describe('api', () => {
-  beforeEach(() => mockFetch.mockReset());
+  beforeEach(() => {
+    mockFetch.mockReset();
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
+    (AsyncStorage.setItem as jest.Mock).mockResolvedValue(undefined);
+    (AsyncStorage.removeItem as jest.Mock).mockResolvedValue(undefined);
+  });
+
+  it('stores and clears the backend access token', async () => {
+    await setBackendAccessToken('token-123');
+    await clearBackendAccessToken();
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith('pico-web-access-token', 'token-123');
+    expect(AsyncStorage.removeItem).toHaveBeenCalledWith('pico-web-access-token');
+  });
+
+  it('adds authentication and JSON headers to backend requests', async () => {
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue('token-123');
+    mockFetch.mockResolvedValue(okJson([]));
+    await listManagedDevices();
+    const options = mockFetch.mock.calls[0][1];
+    expect(options.headers.get('Authorization')).toBe('Bearer token-123');
+    expect(options.headers.get('Accept')).toBe('application/json');
+  });
 
   it('lists remote scripts and maps them to typed scripts', async () => {
-    mockFetch.mockResolvedValue({ ok: true, json: async () => ['hello.txt', 'wifi.ducky'] });
+    mockFetch.mockResolvedValue(okJson(['hello.txt', 'wifi.ducky']));
     const scripts = await listRemoteScripts(device);
     expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/list-files'), expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(scripts.map(s => s.name)).toEqual(['hello.txt', 'wifi.ducky']);
@@ -21,8 +45,13 @@ describe('api', () => {
     expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/msg=STRING%20hello%20world'), expect.objectContaining({ method: 'GET' }));
   });
 
-  it('rejects non-success HTTP responses', async () => {
-    mockFetch.mockResolvedValue({ ok: false, status: 503 });
+  it('rejects non-success HTTP responses using the API error message', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 503, json: async () => ({ error: { message: 'Service unavailable' } }) });
+    await expect(listRemoteScripts(device)).rejects.toThrow('Service unavailable');
+  });
+
+  it('falls back to the HTTP status when an error response is not JSON', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 503, json: async () => { throw new Error('not json'); } });
     await expect(listRemoteScripts(device)).rejects.toThrow('HTTP 503');
   });
 
@@ -41,7 +70,33 @@ describe('api', () => {
     await expect(checkDevice(device)).resolves.toBe(false);
   });
 
-  it('documents the minimal Pico capability boundary', () => {
-    expect(backendCapabilities).toEqual({ list: true, execute: true, read: false, upload: false, delete: false, telemetry: false, wifi: false, auth: false, websocket: false });
+  it('maps managed devices, filters, metrics and malformed tags', async () => {
+    mockFetch
+      .mockResolvedValueOnce(okJson([{ id: 'd2', name: 'Lab', pico_url: 'http://pico', api_url: 'http://api', status: 'online', group_name: 'lab', tags: ['test'], last_seen: '2026-08-14T10:00:00Z', firmware: '1.2.0' }]))
+      .mockResolvedValueOnce(okJson({ status: 'online', temperature_c: 40.5, free_memory: 12000, wifi_rssi: -50, uptime_seconds: 12 }));
+    const devices = await listManagedDevices({ status: 'online', group: 'lab', tag: 'test', search: 'Lab' });
+    expect(devices[0]).toMatchObject({ id: 'd2', groupName: 'lab', tags: ['test'], firmware: '1.2.0' });
+    expect(await getDeviceMetrics('d2')).toMatchObject({ temperature_c: 40.5, free_memory: 12000 });
+    expect(mockFetch.mock.calls[0][0]).toContain('status=online');
+    expect(mockFetch.mock.calls[0][0]).toContain('tag=test');
+  });
+
+  it('maps missing backend tags to an empty list', async () => {
+    mockFetch.mockResolvedValue(okJson([{ id: 'd4', name: 'No tags', pico_url: 'http://pico', api_url: 'http://api', status: 'unknown', tags: null }]));
+    await expect(listManagedDevices()).resolves.toEqual([expect.objectContaining({ tags: [] })]);
+  });
+
+  it('creates, updates and deletes managed devices', async () => {
+    mockFetch
+      .mockResolvedValueOnce(okJson({ id: 'd3', name: 'New', pico_url: 'http://pico', api_url: 'http://api', status: 'unknown', tags: [], group_name: null }))
+      .mockResolvedValueOnce(okJson({ id: 'd3', name: 'Updated', pico_url: 'http://pico', api_url: 'http://api', status: 'unknown', tags: ['lab'], group_name: 'lab' }))
+      .mockResolvedValueOnce({ ok: true, status: 204 });
+    expect((await createManagedDevice({ name: 'New', picoUrl: 'http://pico', apiUrl: 'http://api' })).id).toBe('d3');
+    expect((await updateManagedDevice('d3', { name: 'Updated', groupName: 'lab', tags: ['lab'] })).name).toBe('Updated');
+    await expect(deleteManagedDevice('d3')).resolves.toBeUndefined();
+  });
+
+  it('documents the device-management capability boundary', () => {
+    expect(backendCapabilities).toMatchObject({ list: true, execute: true, telemetry: true, auth: true, deviceManagement: true, heartbeat: true, metrics: true, groups: true });
   });
 });

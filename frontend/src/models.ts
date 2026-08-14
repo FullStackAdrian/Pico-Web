@@ -25,8 +25,16 @@ export type Device = {
   picoUrl: string;
   apiUrl: string;
   status: 'online' | 'offline' | 'unknown';
-  lastSeen?: string;
-  firmware?: string;
+  lastSeen?: string | null;
+  firmware?: string | null;
+  groupName?: string | null;
+  tags?: string[];
+  metrics?: {
+    uptime_seconds?: number;
+    free_memory?: number;
+    temperature_c?: number;
+    wifi_rssi?: number;
+  };
 };
 
 export type Payload = {
