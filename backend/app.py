@@ -1,16 +1,18 @@
+import asyncio
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi import HTTPException
 from backend.db import init_db
+from backend.job_system import job_system
 from backend.routes import router
 
 if os.getenv("ENVIRONMENT", "development") == "production" and (not os.getenv("DATABASE_URL") or not os.getenv("JWT_SECRET") or not os.getenv("ENCRYPTION_KEY")):
     raise RuntimeError("DATABASE_URL, JWT_SECRET and ENCRYPTION_KEY are required in production")
 init_db()
 
-app = FastAPI(title="Pico Web API", version="2.1.0")
+app = FastAPI(title="Pico Web API", version="2.2.0")
 app.include_router(router, prefix="/api/v1")
 
 @app.exception_handler(HTTPException)
@@ -27,6 +29,28 @@ async def validation_exception_handler(_: Request, exc: RequestValidationError):
 async def unhandled_exception_handler(_: Request, __: Exception):
     return JSONResponse(status_code=500, content={"error": {"code": "INTERNAL_SERVER_ERROR", "message": "Internal server error"}})
 
+@app.websocket("/api/v1/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    queue = job_system.events.subscribe()
+    try:
+        while True:
+            event_task = asyncio.create_task(queue.get())
+            receive_task = asyncio.create_task(websocket.receive_json())
+            done, pending = await asyncio.wait({event_task, receive_task}, return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+            completed = next(iter(done))
+            result = completed.result()
+            if completed is receive_task:
+                await websocket.send_json({"type": "ack", "received": result})
+            else:
+                await websocket.send_json(result)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        job_system.events.unsubscribe(queue)
+
 @app.get("/api/v1/health")
 def health():
-    return {"status": "ok", "capabilities": {"scripts": True, "websocket": True, "authentication": True, "postgresql": True, "device_management": True, "heartbeat": True, "metrics": True, "groups": True}}
+    return {"status": "ok", "capabilities": {"scripts": True, "jobs": True, "queue": True, "websocket": True, "authentication": True, "postgresql": True, "device_management": True, "heartbeat": True, "metrics": True, "groups": True}}
