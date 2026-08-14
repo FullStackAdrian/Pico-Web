@@ -90,14 +90,20 @@ def test_job_can_target_a_device_and_execution_history_references_job():
 
 def test_job_websocket_emits_real_job_lifecycle():
     """Verify the real enqueue -> worker -> WebSocket -> execution lifecycle."""
-    headers = auth_headers()
-    script_id = create_script(headers, 'websocket-job')
+    http_client = TestClient(app)
+    ws_client = TestClient(app)
+    headers = auth_headers(http_client)
+    script_id = create_script(headers, 'websocket-job', http_client)
 
-    with client.websocket_connect('/api/v1/ws') as websocket:
+    # Keep the WebSocket session on its own TestClient portal. The HTTP
+    # request that enqueues the job must not share that portal: otherwise
+    # Starlette's blocking WebSocket receive can prevent the POST from being
+    # serviced by the same portal and the test appears to hang.
+    with ws_client.websocket_connect('/api/v1/ws') as websocket:
         connected = websocket.receive_json()
         assert connected['type'] == 'connected'
 
-        response = client.post('/api/v1/jobs', headers=headers, json={'script_id': script_id})
+        response = http_client.post('/api/v1/jobs', headers=headers, json={'script_id': script_id})
         assert response.status_code == 202
         job_id = response.json()['id']
 
@@ -111,7 +117,7 @@ def test_job_websocket_emits_real_job_lifecycle():
         assert [event['status'] for event in events] == ['queued', 'running', 'succeeded']
         assert all(event['job_id'] == job_id for event in events)
 
-    history = client.get('/api/v1/executions', headers=headers)
+    history = http_client.get('/api/v1/executions', headers=headers)
     assert history.status_code == 200
     execution = next(item for item in history.json() if item['script_id'] == script_id)
     assert execution['job_id'] == job_id
