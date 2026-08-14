@@ -1,3 +1,4 @@
+import { Alert } from 'react-native';
 import { render, waitFor, fireEvent } from '@testing-library/react-native';
 import Dashboard from '../app/(tabs)/index';
 import History from '../app/(tabs)/history';
@@ -76,6 +77,11 @@ describe('Device dashboard', () => {
     mockedCreate.mockReset();
     mockedUpdate.mockReset();
     mockedDelete.mockReset();
+    jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('renders the fleet and loads metrics for the selected device', async () => {
@@ -104,19 +110,21 @@ describe('Device dashboard', () => {
   it('creates a device through the dashboard form', async () => {
     mockedListDevices.mockResolvedValue([]);
     mockedCreate.mockResolvedValue(managedDevice);
-    const { getByText, getByPlaceholderText } = render(<DeviceScreen />);
+    const { getByText, getByPlaceholderText, getAllByPlaceholderText } = render(<DeviceScreen />);
     await waitFor(() => expect(getByText('Device dashboard')).toBeTruthy());
     fireEvent.press(getByText('＋ Add'));
     fireEvent.changeText(getByPlaceholderText('Name'), 'Lab Pico');
     fireEvent.changeText(getByPlaceholderText('Pico URL'), 'http://pico');
     fireEvent.changeText(getByPlaceholderText('API URL'), 'http://api');
-    fireEvent.changeText(getByPlaceholderText('Group'), 'lab');
+    const groupInputs = getAllByPlaceholderText('Group');
+    expect(groupInputs).toHaveLength(2);
+    fireEvent.changeText(groupInputs[1], 'lab');
     fireEvent.changeText(getByPlaceholderText('Tags (comma separated)'), 'test, lab');
     fireEvent.press(getByText('Save'));
     await waitFor(() => expect(mockedCreate).toHaveBeenCalledWith(expect.objectContaining({ name: 'Lab Pico', groupName: 'lab', tags: ['test', 'lab'] })));
   });
 
-  it('edits and deletes the selected device', async () => {
+  it('edits and deletes the selected device after confirming the destructive action', async () => {
     mockedListDevices.mockResolvedValue([managedDevice]);
     mockedMetrics.mockResolvedValue({ status: 'online' });
     mockedUpdate.mockResolvedValue({ ...managedDevice, name: 'Updated Pico' });
@@ -130,6 +138,11 @@ describe('Device dashboard', () => {
     await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith('d1', expect.objectContaining({ name: 'Updated Pico' })));
 
     fireEvent.press(getByText('Delete'));
+    const alertCall = (Alert.alert as jest.Mock).mock.calls.at(-1);
+    expect(alertCall?.[0]).toBe('Delete device');
+    const actions = alertCall?.[2] as Array<{ text: string; onPress?: () => void }>;
+    expect(actions?.map((action) => action.text)).toEqual(['Cancel', 'Delete']);
+    await actions[1].onPress?.();
     await waitFor(() => expect(mockedDelete).toHaveBeenCalledWith('d1'));
   });
 });
