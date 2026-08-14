@@ -1,4 +1,4 @@
-import asyncio
+import queue
 import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -32,41 +32,27 @@ def serialize_job(job: Job) -> dict[str, Any]:
 
 
 class JobEventHub:
-    """Thread-safe event fan-out with queues owned by each WebSocket event loop."""
+    """Thread-safe fan-out for job lifecycle events."""
 
     def __init__(self):
-        self._clients: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Queue]] = {}
+        self._clients: dict[int, queue.Queue] = {}
         self._lock = Lock()
 
-    def subscribe(self) -> asyncio.Queue:
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue = asyncio.Queue()
-        client_id = id(queue)
+    def subscribe(self) -> queue.Queue:
+        client_queue: queue.Queue = queue.Queue()
         with self._lock:
-            self._clients[client_id] = (loop, queue)
-        return queue
+            self._clients[id(client_queue)] = client_queue
+        return client_queue
 
-    def unsubscribe(self, queue: asyncio.Queue) -> None:
+    def unsubscribe(self, client_queue: queue.Queue) -> None:
         with self._lock:
-            self._clients.pop(id(queue), None)
+            self._clients.pop(id(client_queue), None)
 
     def publish(self, event: dict[str, Any]) -> None:
         with self._lock:
-            clients = tuple(self._clients.items())
-
-        for client_id, (loop, queue) in clients:
-            if loop.is_closed():
-                with self._lock:
-                    self._clients.pop(client_id, None)
-                continue
-
-            # The queue belongs to the subscriber's loop. Always enqueue from
-            # that loop so publishers can safely be workers or other threads.
-            try:
-                loop.call_soon_threadsafe(queue.put_nowait, event)
-            except RuntimeError:
-                with self._lock:
-                    self._clients.pop(client_id, None)
+            clients = tuple(self._clients.values())
+        for client_queue in clients:
+            client_queue.put(event)
 
 
 class JobSystem:
