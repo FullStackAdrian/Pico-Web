@@ -1,4 +1,4 @@
-import queue
+import asyncio
 import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -32,27 +32,37 @@ def serialize_job(job: Job) -> dict[str, Any]:
 
 
 class JobEventHub:
-    """Thread-safe fan-out for job lifecycle events."""
+    """Thread-safe fan-out with an asyncio queue owned by each WebSocket loop."""
 
     def __init__(self):
-        self._clients: dict[int, queue.Queue] = {}
+        self._clients: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Queue[dict[str, Any]]]] = {}
         self._lock = Lock()
 
-    def subscribe(self) -> queue.Queue:
-        client_queue: queue.Queue = queue.Queue()
+    def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
+        loop = asyncio.get_running_loop()
+        client_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         with self._lock:
-            self._clients[id(client_queue)] = client_queue
+            self._clients[id(client_queue)] = (loop, client_queue)
         return client_queue
 
-    def unsubscribe(self, client_queue: queue.Queue) -> None:
+    def unsubscribe(self, client_queue: asyncio.Queue[dict[str, Any]]) -> None:
         with self._lock:
             self._clients.pop(id(client_queue), None)
 
     def publish(self, event: dict[str, Any]) -> None:
         with self._lock:
-            clients = tuple(self._clients.values())
-        for client_queue in clients:
-            client_queue.put(event)
+            clients = tuple(self._clients.items())
+
+        for client_id, (loop, client_queue) in clients:
+            if loop.is_closed():
+                with self._lock:
+                    self._clients.pop(client_id, None)
+                continue
+            try:
+                loop.call_soon_threadsafe(client_queue.put_nowait, event)
+            except RuntimeError:
+                with self._lock:
+                    self._clients.pop(client_id, None)
 
 
 class JobSystem:
