@@ -32,7 +32,7 @@ def serialize_job(job: Job) -> dict[str, Any]:
 
 
 class JobEventHub:
-    """Thread-safe fan-out with an asyncio queue owned by each WebSocket loop."""
+    """Thread-safe fan-out for job lifecycle events to WebSocket event loops."""
 
     def __init__(self):
         self._clients: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Queue[dict[str, Any]]]] = {}
@@ -58,8 +58,13 @@ class JobEventHub:
                 with self._lock:
                     self._clients.pop(client_id, None)
                 continue
+
             try:
-                loop.call_soon_threadsafe(client_queue.put_nowait, event)
+                # Queue ownership belongs to the WebSocket event loop. The
+                # publisher can be a worker thread, so schedule the coroutine
+                # on the subscriber's loop rather than touching the queue
+                # directly from the worker thread.
+                asyncio.run_coroutine_threadsafe(client_queue.put(event), loop)
             except RuntimeError:
                 with self._lock:
                     self._clients.pop(client_id, None)
