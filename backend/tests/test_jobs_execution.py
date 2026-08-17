@@ -96,8 +96,9 @@ def test_job_websocket_emits_real_job_lifecycle():
 
     with TestClient(app) as test_client:
         post_result = {}
+        ws_token = headers['Authorization'].split(' ')[1]
 
-        with test_client.websocket_connect('/api/v1/ws') as websocket:
+        with test_client.websocket_connect(f'/api/v1/ws?token={ws_token}') as websocket:
             connected = websocket.receive_json()
             assert connected == {'type': 'connected'}
 

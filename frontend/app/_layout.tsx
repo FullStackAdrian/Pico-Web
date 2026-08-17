@@ -9,6 +9,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="editor" options={{ presentation: 'modal', headerShown: true, title: 'Script editor' }} />
         <Stack.Screen name="versions" options={{ presentation: 'modal', headerShown: true, title: 'Script versions' }} />
+        <Stack.Screen name="security" options={{ presentation: 'modal', headerShown: true, title: 'Security & administration' }} />
       </Stack>
     </>
   );

@@ -96,3 +96,70 @@ export type AppState = {
   devices: Device[];
   activeDeviceId: string;
 };
+
+export type AuthPrincipal = {
+  id: number;
+  username: string;
+  role: string;
+  permissions: string[];
+};
+
+export type SessionInfo = {
+  id: string;
+  userId: number;
+  createdAt: string | null;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  active: boolean;
+};
+
+export type ApiKeyInfo = {
+  id: string;
+  name: string;
+  description: string;
+  prefix: string;
+  scopes: string[];
+  createdAt: string | null;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+};
+
+export type AdminUser = {
+  id: number;
+  username: string;
+  role: string;
+  roles: string[];
+  isActive: boolean;
+  createdAt: string | null;
+};
+
+export type RoleInfo = {
+  name: string;
+  description: string;
+  permissions: string[];
+};
+
+export type PermissionInfo = string;
+
+export type AuditEntry = {
+  id: number;
+  user: string | null;
+  apiKeyId: string | null;
+  action: string;
+  resource: string | null;
+  resourceId: string | null;
+  success: boolean;
+  ip: string | null;
+  userAgent: string | null;
+  createdAt: string | null;
+};
+
+export type AuditPage = {
+  entries: AuditEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+};

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Device, DiffHunk, Job, Script, ScriptDiff, ScriptVersion } from './models';
+import type { AdminUser, ApiKeyInfo, AuditEntry, AuditPage, AuthPrincipal, Device, DiffHunk, Job, PermissionInfo, RoleInfo, Script, ScriptDiff, ScriptVersion, SessionInfo } from './models';
 
 const timeout = 6000;
 const BACKEND_URL = (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1').replace(/\/$/, '');
@@ -7,6 +7,141 @@ const TOKEN_KEY = 'pico-web-access-token';
 
 export async function setBackendAccessToken(token: string) { await AsyncStorage.setItem(TOKEN_KEY, token); }
 export async function clearBackendAccessToken() { await AsyncStorage.removeItem(TOKEN_KEY); }
+export async function getBackendAccessToken() { return AsyncStorage.getItem(TOKEN_KEY); }
+
+function mapPrincipal(item: Record<string, unknown>): AuthPrincipal {
+  return {
+    id: Number(item.id),
+    username: String(item.username),
+    role: String(item.role),
+    permissions: Array.isArray(item.permissions) ? item.permissions.map(String) : [],
+  };
+}
+
+function mapSession(item: Record<string, unknown>): SessionInfo {
+  return {
+    id: String(item.id),
+    userId: Number(item.user_id),
+    createdAt: item.created_at == null ? null : String(item.created_at),
+    expiresAt: item.expires_at == null ? null : String(item.expires_at),
+    lastUsedAt: item.last_used_at == null ? null : String(item.last_used_at),
+    ip: item.ip == null ? null : String(item.ip),
+    userAgent: item.user_agent == null ? null : String(item.user_agent),
+    active: Boolean(item.active),
+  };
+}
+
+function mapApiKey(item: Record<string, unknown>): ApiKeyInfo {
+  return {
+    id: String(item.id),
+    name: String(item.name),
+    description: String(item.description || ''),
+    prefix: String(item.prefix || ''),
+    scopes: Array.isArray(item.scopes) ? item.scopes.map(String) : [],
+    createdAt: item.created_at == null ? null : String(item.created_at),
+    expiresAt: item.expires_at == null ? null : String(item.expires_at),
+    lastUsedAt: item.last_used_at == null ? null : String(item.last_used_at),
+    revokedAt: item.revoked_at == null ? null : String(item.revoked_at),
+  };
+}
+
+function mapUser(item: Record<string, unknown>): AdminUser {
+  return {
+    id: Number(item.id),
+    username: String(item.username),
+    role: String(item.role),
+    roles: Array.isArray(item.roles) ? item.roles.map(String) : [],
+    isActive: Boolean(item.is_active),
+    createdAt: item.created_at == null ? null : String(item.created_at),
+  };
+}
+
+function mapAudit(item: Record<string, unknown>): AuditEntry {
+  return {
+    id: Number(item.id),
+    user: item.user == null ? null : String(item.user),
+    apiKeyId: item.api_key_id == null ? null : String(item.api_key_id),
+    action: String(item.action),
+    resource: item.resource == null ? null : String(item.resource),
+    resourceId: item.resource_id == null ? null : String(item.resource_id),
+    success: Boolean(item.success),
+    ip: item.ip == null ? null : String(item.ip),
+    userAgent: item.user_agent == null ? null : String(item.user_agent),
+    createdAt: item.created_at == null ? null : String(item.created_at),
+  };
+}
+
+export async function getMe(): Promise<AuthPrincipal> {
+  const response = await request(`${BACKEND_URL}/auth/me`);
+  return mapPrincipal(await response.json() as Record<string, unknown>);
+}
+
+export async function listSessions(): Promise<SessionInfo[]> {
+  const response = await request(`${BACKEND_URL}/auth/sessions`);
+  const data = await response.json() as Array<Record<string, unknown>>;
+  return data.map(mapSession);
+}
+
+export async function revokeSession(sessionId: string): Promise<void> {
+  await request(`${BACKEND_URL}/auth/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+}
+
+export async function revokeAllSessions(): Promise<void> {
+  await request(`${BACKEND_URL}/auth/sessions/revoke-all`, { method: 'POST' });
+}
+
+export async function listApiKeys(): Promise<ApiKeyInfo[]> {
+  const response = await request(`${BACKEND_URL}/api-keys`);
+  const data = await response.json() as Array<Record<string, unknown>>;
+  return data.map(mapApiKey);
+}
+
+export async function createApiKey(input: { name: string; description?: string; scopes?: string[] }): Promise<ApiKeyInfo & { key?: string }> {
+  const response = await request(`${BACKEND_URL}/api-keys`, { method: 'POST', body: JSON.stringify({ name: input.name, description: input.description || '', scopes: input.scopes || [] }) });
+  const data = await response.json() as Record<string, unknown>;
+  return { ...mapApiKey(data), key: data.key == null ? undefined : String(data.key) };
+}
+
+export async function revokeApiKey(apiKeyId: string): Promise<void> {
+  await request(`${BACKEND_URL}/api-keys/${encodeURIComponent(apiKeyId)}`, { method: 'DELETE' });
+}
+
+export async function listUsers(): Promise<AdminUser[]> {
+  const response = await request(`${BACKEND_URL}/users`);
+  const data = await response.json() as Array<Record<string, unknown>>;
+  return data.map(mapUser);
+}
+
+export async function updateUserRole(userId: number, role: string): Promise<AdminUser> {
+  const response = await request(`${BACKEND_URL}/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ role }) });
+  return mapUser(await response.json() as Record<string, unknown>);
+}
+
+export async function listRoles(): Promise<RoleInfo[]> {
+  const response = await request(`${BACKEND_URL}/roles`);
+  const data = await response.json() as Array<Record<string, unknown>>;
+  return data.map((item) => ({
+    name: String(item.name),
+    description: String(item.description || ''),
+    permissions: Array.isArray(item.permissions) ? item.permissions.map(String) : [],
+  }));
+}
+
+export async function listPermissions(): Promise<PermissionInfo[]> {
+  const response = await request(`${BACKEND_URL}/permissions`);
+  return response.json() as Promise<PermissionInfo[]>;
+}
+
+export async function getAuditLog(limit = 50, offset = 0): Promise<AuditPage> {
+  const response = await request(`${BACKEND_URL}/audit?limit=${limit}&offset=${offset}`);
+  const data = await response.json() as Record<string, unknown>;
+  return {
+    entries: Array.isArray(data.entries) ? (data.entries as Array<Record<string, unknown>>).map(mapAudit) : [],
+    total: Number(data.total || 0),
+    limit: Number(data.limit || 0),
+    offset: Number(data.offset || 0),
+  };
+}
 
 async function request(url: string, init?: RequestInit) {
   const controller = new AbortController();
@@ -206,5 +341,6 @@ export const backendCapabilities = {
   list: true, execute: true, read: false, upload: false, delete: false, telemetry: true, wifi: false,
   auth: true, websocket: true, jobs: true, queue: true, multipleExecution: true, jobHistory: true,
   scriptVersions: true, scriptDiff: true, scriptRollback: true, scriptVersionExecution: true,
+  rbac: true, sessions: true, apiKeys: true, audit: true, rateLimiting: true,
   deviceManagement: true, heartbeat: true, metrics: true, groups: true,
 };
