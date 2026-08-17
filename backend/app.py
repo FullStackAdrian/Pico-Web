@@ -1,5 +1,6 @@
 import asyncio
 import os
+from queue import Empty
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -36,7 +37,11 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         await websocket.send_json({"type": "connected"})
         while True:
-            event = await asyncio.to_thread(client_queue.get)
+            try:
+                event = client_queue.get_nowait()
+            except Empty:
+                await asyncio.sleep(0.01)
+                continue
             await websocket.send_json(event)
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
