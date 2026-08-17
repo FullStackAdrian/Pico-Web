@@ -38,6 +38,28 @@ class Session(Base):
             and self.expires_at > datetime.now(timezone.utc)
         )
 
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    key_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    prefix: Mapped[str] = mapped_column(String(16))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    scopes: Mapped[list] = mapped_column(JSON, default=list)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    user: Mapped[User] = relationship()
+
+    @property
+    def active(self) -> bool:
+        return (
+            self.revoked_at is None
+            and (self.expires_at is None or self.expires_at > datetime.now(timezone.utc))
+        )
+
 class Role(Base):
     __tablename__ = "roles"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

@@ -5,13 +5,14 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from cryptography.fernet import Fernet
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.db import get_db
-from backend.models import Session, User
+from backend.models import ApiKey, Session, User
 from backend.rbac import get_permissions_for_user
 
 JWT_ALGORITHM = "HS256"
@@ -62,7 +63,24 @@ def create_refresh_token(user: User) -> tuple[str, datetime]:
     token = secrets.token_urlsafe(48)
     return token, expires
 
-def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), db: Session = Depends(get_db)) -> User:
+def _authenticate_api_key(db: Session, raw_key: str) -> User:
+    digest = "sha256$" + hashlib.sha256(raw_key.encode()).hexdigest()
+    api_key = db.scalar(select(ApiKey).where(ApiKey.key_hash == digest))
+    if not api_key or not api_key.active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or revoked API key", headers={"WWW-Authenticate": "ApiKey"})
+    user = db.get(User, api_key.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or revoked API key", headers={"WWW-Authenticate": "ApiKey"})
+    api_key.last_used_at = datetime.now(timezone.utc)
+    db.commit()
+    user.permissions = set(api_key.scopes or [])
+    user.via_api_key = True
+    user.api_key_id = api_key.id
+    return user
+
+def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), x_api_key: str | None = Header(default=None, alias="X-API-Key"), db: Session = Depends(get_db)) -> User:
+    if x_api_key:
+        return _authenticate_api_key(db, x_api_key)
     if not credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required", headers={"WWW-Authenticate": "Bearer"})
     try:
@@ -85,6 +103,12 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
         session.last_used_at = datetime.now(timezone.utc)
         db.commit()
     user.permissions = get_permissions_for_user(db, user)
+    user.via_api_key = False
+    return user
+
+def require_session(user: User = Depends(get_current_user)) -> User:
+    if getattr(user, "via_api_key", False):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session authentication required")
     return user
 
 def require_admin(user: User = Depends(get_current_user)) -> User:

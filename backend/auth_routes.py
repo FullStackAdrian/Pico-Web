@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from backend.db import get_db
 from backend.models import Session, User, WifiConfig
 from backend.rbac import WIFI_CONFIGURE, require_permission
-from backend.security import create_access_token, create_refresh_token, encrypt, get_current_user, hash_password, verify_password
+from backend.security import create_access_token, create_refresh_token, encrypt, get_current_user, hash_password, require_session, verify_password
 
 router = APIRouter()
 
@@ -108,12 +108,12 @@ def logout(data: RefreshIn, db: Session = Depends(get_db)):
         db.commit()
 
 @router.get('/auth/sessions')
-def sessions(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def sessions(user: User = Depends(require_session), db: Session = Depends(get_db)):
     rows = db.scalars(select(Session).where(Session.user_id == user.id).order_by(Session.created_at.desc())).all()
     return [_serialize_session(session) for session in rows]
 
 @router.delete('/auth/sessions/{session_id}', status_code=204)
-def revoke_session(session_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def revoke_session(session_id: str, user: User = Depends(require_session), db: Session = Depends(get_db)):
     stored = db.get(Session, session_id)
     if not stored or stored.user_id != user.id:
         raise HTTPException(403, 'Cannot revoke this session')
@@ -121,7 +121,7 @@ def revoke_session(session_id: str, user: User = Depends(get_current_user), db: 
     db.commit()
 
 @router.post('/auth/sessions/revoke-all', status_code=204)
-def revoke_all_sessions(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def revoke_all_sessions(user: User = Depends(require_session), db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
     rows = db.scalars(select(Session).where(Session.user_id == user.id, Session.revoked_at.is_(None))).all()
     for session in rows:
