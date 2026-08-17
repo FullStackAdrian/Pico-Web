@@ -9,6 +9,7 @@ from backend.db import init_db
 from backend.job_system import job_system
 from backend.routes import router
 from backend.audit import AuditMiddleware
+from backend.rate_limit import RateLimitMiddleware
 
 if os.getenv("ENVIRONMENT", "development") == "production" and (not os.getenv("DATABASE_URL") or not os.getenv("JWT_SECRET") or not os.getenv("ENCRYPTION_KEY")):
     raise RuntimeError("DATABASE_URL, JWT_SECRET and ENCRYPTION_KEY are required in production")
@@ -16,6 +17,7 @@ init_db()
 
 app = FastAPI(title="Pico Web API", version="2.3.0")
 app.include_router(router, prefix="/api/v1")
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(AuditMiddleware)
 
 @app.exception_handler(HTTPException)
