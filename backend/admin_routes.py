@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.db import get_db
-from backend.models import Permission, Role, User
+from backend.models import AuditLog, Permission, Role, User
 from backend.rbac import (
+    AUDIT_READ,
     PERMISSIONS_READ,
     ROLES_READ,
     USERS_MANAGE,
@@ -73,3 +74,37 @@ def list_roles(_: User = Depends(require_permission(ROLES_READ)), db: Session = 
 @router.get('/permissions')
 def list_permissions(_: User = Depends(require_permission(PERMISSIONS_READ)), db: Session = Depends(get_db)):
     return sorted(p.name for p in db.scalars(select(Permission).order_by(Permission.name)).all())
+
+
+def serialize_audit_entry(entry: AuditLog) -> dict:
+    return {
+        "id": entry.id,
+        "user": entry.user.username if entry.user else None,
+        "api_key_id": entry.api_key_id,
+        "action": entry.action,
+        "resource": entry.resource,
+        "resource_id": entry.resource_id,
+        "success": entry.success,
+        "ip": entry.ip,
+        "user_agent": entry.user_agent,
+        "created_at": entry.created_at.isoformat() if entry.created_at else None,
+    }
+
+
+@router.get('/audit')
+def audit_log(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    _: User = Depends(require_permission(AUDIT_READ)),
+    db: Session = Depends(get_db),
+):
+    total = db.scalar(select(func.count()).select_from(AuditLog)) or 0
+    entries = db.scalars(
+        select(AuditLog).order_by(AuditLog.id.desc()).limit(limit).offset(offset)
+    ).all()
+    return {
+        "entries": [serialize_audit_entry(entry) for entry in entries],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
