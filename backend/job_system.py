@@ -1,8 +1,8 @@
-import asyncio
 import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
+from queue import Queue
 from threading import Lock
 from typing import Any
 
@@ -32,20 +32,19 @@ def serialize_job(job: Job) -> dict[str, Any]:
 
 
 class JobEventHub:
-    """Thread-safe fan-out for job lifecycle events to WebSocket event loops."""
+    """Thread-safe fan-out for job lifecycle events."""
 
     def __init__(self):
-        self._clients: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Queue[dict[str, Any]]]] = {}
+        self._clients: dict[int, Queue[dict[str, Any]]] = {}
         self._lock = Lock()
 
-    def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
-        loop = asyncio.get_running_loop()
-        client_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    def subscribe(self) -> Queue[dict[str, Any]]:
+        client_queue: Queue[dict[str, Any]] = Queue()
         with self._lock:
-            self._clients[id(client_queue)] = (loop, client_queue)
+            self._clients[id(client_queue)] = client_queue
         return client_queue
 
-    def unsubscribe(self, client_queue: asyncio.Queue[dict[str, Any]]) -> None:
+    def unsubscribe(self, client_queue: Queue[dict[str, Any]]) -> None:
         with self._lock:
             self._clients.pop(id(client_queue), None)
 
@@ -53,19 +52,10 @@ class JobEventHub:
         with self._lock:
             clients = tuple(self._clients.items())
 
-        for client_id, (loop, client_queue) in clients:
-            if loop.is_closed():
-                with self._lock:
-                    self._clients.pop(client_id, None)
-                continue
-
+        for client_id, client_queue in clients:
             try:
-                # Queue ownership belongs to the WebSocket event loop. The
-                # publisher can be a worker thread, so schedule the coroutine
-                # on the subscriber's loop rather than touching the queue
-                # directly from the worker thread.
-                asyncio.run_coroutine_threadsafe(client_queue.put(event), loop)
-            except RuntimeError:
+                client_queue.put_nowait(event)
+            except Exception:
                 with self._lock:
                     self._clients.pop(client_id, None)
 
@@ -153,6 +143,7 @@ class JobSystem:
                 if execution:
                     execution.duration_ms = duration_ms
                     execution.success = True
+                    execution.error = None
                     db.commit()
             self._set_state(job_id, "succeeded")
         except Exception as exc:
