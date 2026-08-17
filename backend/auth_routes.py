@@ -78,8 +78,8 @@ def logout(data: RefreshIn, db: Session = Depends(get_db)):
 def me(user: User = Depends(get_current_user)):
     return {'id': user.id, 'username': user.username, 'role': user.role}
 
-@router.websocket('/ws')
-async def websocket(websocket: WebSocket):
+@router.websocket('/ws/echo')
+async def echo_websocket(websocket: WebSocket):
     await websocket.accept()
     await websocket.send_json({'type': 'connected', 'timestamp': datetime.now(timezone.utc).isoformat()})
     try:

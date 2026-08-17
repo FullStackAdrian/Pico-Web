@@ -1,3 +1,4 @@
+import time
 from uuid import uuid4
 from fastapi.testclient import TestClient
 
@@ -65,7 +66,13 @@ def test_script_crud_execute_and_history():
     assert updated.status_code == 200 and updated.json()['content'] == 'WORLD'
     execution = client.post(f'/api/v1/scripts/{script_id}/execute', headers=headers, json={'device_id': None})
     assert execution.status_code == 202
-    assert any(x['script_id'] == script_id for x in client.get('/api/v1/executions', headers=headers).json())
+    deadline = time.time() + 3
+    while time.time() < deadline:
+        if any(x['script_id'] == script_id for x in client.get('/api/v1/executions', headers=headers).json()):
+            break
+        time.sleep(0.02)
+    else:
+        assert False, 'Execution was never recorded for the executed script'
     assert client.delete(f'/api/v1/scripts/{script_id}', headers=headers).status_code == 204
     assert client.get(f'/api/v1/scripts/{script_id}', headers=headers).status_code == 404
 
@@ -125,7 +132,9 @@ def test_passwords_are_salted_and_never_stored_plaintext():
 
 
 def test_websocket_roundtrip():
-    with client.websocket_connect('/api/v1/ws') as websocket:
+    with client.websocket_connect('/api/v1/ws/echo') as websocket:
         assert websocket.receive_json()['type'] == 'connected'
         websocket.send_json({'hello': 'world'})
-        assert websocket.receive_json()['type'] == 'ack'
+        ack = websocket.receive_json()
+        assert ack['type'] == 'ack'
+        assert ack['payload'] == {'hello': 'world'}
