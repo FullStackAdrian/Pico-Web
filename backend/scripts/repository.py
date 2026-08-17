@@ -17,6 +17,11 @@ class ScriptRepository:
     def get_script(self, script_id: str) -> Script | None:
         return self._session.get(Script, script_id)
 
+    def list_scripts(self) -> list[Script]:
+        return list(self._session.scalars(
+            select(Script).order_by(Script.created_at.desc())
+        ).all())
+
     def list_versions(self, script_id: str) -> list[ScriptVersion]:
         return list(self._session.scalars(
             select(ScriptVersion)
