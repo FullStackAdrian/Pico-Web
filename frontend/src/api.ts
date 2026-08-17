@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Device, Job, Script } from './models';
+import type { Device, DiffHunk, Job, Script, ScriptDiff, ScriptVersion } from './models';
 
 const timeout = 6000;
 const BACKEND_URL = (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1').replace(/\/$/, '');
@@ -90,34 +90,121 @@ export async function updateManagedDevice(deviceId: string, input: Partial<{ nam
 
 export async function deleteManagedDevice(deviceId: string) { await request(`${BACKEND_URL}/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE' }); }
 
+function mapJob(item: Record<string, unknown>): Job {
+  return {
+    id: String(item.id),
+    scriptId: String(item.script_id),
+    deviceId: item.device_id == null ? null : String(item.device_id),
+    scriptVersion: item.script_version == null ? null : Number(item.script_version),
+    status: item.status as Job['status'],
+    createdAt: String(item.created_at),
+    startedAt: item.started_at == null ? null : String(item.started_at),
+    finishedAt: item.finished_at == null ? null : String(item.finished_at),
+    error: item.error == null ? null : String(item.error),
+  };
+}
+
 export async function createJob(input: { scriptId: string; deviceId?: string | null }): Promise<Job> {
   const response = await request(`${BACKEND_URL}/jobs`, { method: 'POST', body: JSON.stringify({ script_id: input.scriptId, device_id: input.deviceId || null }) });
-  return response.json() as Promise<Job>;
+  return mapJob(await response.json() as Record<string, unknown>);
 }
 
 export async function createJobs(scriptIds: string[], deviceId?: string | null): Promise<Job[]> {
   const response = await request(`${BACKEND_URL}/jobs/batch`, { method: 'POST', body: JSON.stringify({ script_ids: scriptIds, device_id: deviceId || null }) });
-  const body = await response.json() as { jobs: Job[] };
-  return body.jobs;
+  const body = await response.json() as { jobs: Array<Record<string, unknown>> };
+  return body.jobs.map(mapJob);
 }
 
 export async function listJobs(): Promise<Job[]> {
   const response = await request(`${BACKEND_URL}/jobs`);
-  return response.json() as Promise<Job[]>;
+  const data = await response.json() as Array<Record<string, unknown>>;
+  return data.map(mapJob);
 }
 
 export async function getJob(jobId: string): Promise<Job> {
   const response = await request(`${BACKEND_URL}/jobs/${encodeURIComponent(jobId)}`);
-  return response.json() as Promise<Job>;
+  return mapJob(await response.json() as Record<string, unknown>);
 }
 
 export async function cancelJob(jobId: string): Promise<Job> {
   const response = await request(`${BACKEND_URL}/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });
-  return response.json() as Promise<Job>;
+  return mapJob(await response.json() as Record<string, unknown>);
+}
+
+function mapScriptVersion(item: Record<string, unknown>): ScriptVersion {
+  return {
+    id: String(item.id),
+    scriptId: String(item.scriptId),
+    version: Number(item.version),
+    content: String(item.content),
+    tags: Array.isArray(item.tags) ? item.tags.map(String) : [],
+    category: String(item.category),
+    createdAt: String(item.createdAt),
+  };
+}
+
+function mapScript(item: Record<string, unknown>): Script {
+  return {
+    id: String(item.id),
+    name: String(item.name),
+    content: String(item.content),
+    tags: Array.isArray(item.tags) ? item.tags.map(String) : [],
+    category: String(item.category),
+    currentVersion: item.currentVersion === undefined ? undefined : Number(item.currentVersion),
+    createdAt: String(item.createdAt),
+    updatedAt: String(item.updatedAt),
+    source: item.source === 'pico' ? 'pico' : 'local',
+  };
+}
+
+function mapDiffHunk(item: Record<string, unknown>): DiffHunk {
+  return {
+    type: item.type as DiffHunk['type'],
+    oldStart: Number(item.old_start),
+    oldEnd: Number(item.old_end),
+    newStart: Number(item.new_start),
+    newEnd: Number(item.new_end),
+    oldLines: Array.isArray(item.old_lines) ? item.old_lines.map(String) : [],
+    newLines: Array.isArray(item.new_lines) ? item.new_lines.map(String) : [],
+  };
+}
+
+export async function listScriptVersions(scriptId: string): Promise<ScriptVersion[]> {
+  const response = await request(`${BACKEND_URL}/scripts/${encodeURIComponent(scriptId)}/versions`);
+  const data = await response.json() as Array<Record<string, unknown>>;
+  return data.map(mapScriptVersion);
+}
+
+export async function getScriptVersion(scriptId: string, version: number): Promise<ScriptVersion> {
+  const response = await request(`${BACKEND_URL}/scripts/${encodeURIComponent(scriptId)}/versions/${version}`);
+  return mapScriptVersion(await response.json() as Record<string, unknown>);
+}
+
+export async function diffScriptVersions(scriptId: string, fromVersion: number, toVersion?: number): Promise<ScriptDiff> {
+  const query = toVersion === undefined ? `?from=${fromVersion}` : `?from=${fromVersion}&to=${toVersion}`;
+  const response = await request(`${BACKEND_URL}/scripts/${encodeURIComponent(scriptId)}/diff${query}`);
+  const data = await response.json() as Record<string, unknown>;
+  return {
+    old: String(data.old),
+    new: String(data.new),
+    changed: Boolean(data.changed),
+    hunks: Array.isArray(data.hunks) ? data.hunks.map((hunk) => mapDiffHunk(hunk as Record<string, unknown>)) : [],
+  };
+}
+
+export async function rollbackScript(scriptId: string, version: number): Promise<Script> {
+  const response = await request(`${BACKEND_URL}/scripts/${encodeURIComponent(scriptId)}/rollback`, { method: 'POST', body: JSON.stringify({ version }) });
+  return mapScript(await response.json() as Record<string, unknown>);
+}
+
+export async function executeScriptVersion(scriptId: string, version?: number): Promise<Job> {
+  const response = await request(`${BACKEND_URL}/scripts/${encodeURIComponent(scriptId)}/execute`, { method: 'POST', body: JSON.stringify({ version: version ?? null }) });
+  return mapJob(await response.json() as Record<string, unknown>);
 }
 
 export const backendCapabilities = {
   list: true, execute: true, read: false, upload: false, delete: false, telemetry: true, wifi: false,
   auth: true, websocket: true, jobs: true, queue: true, multipleExecution: true, jobHistory: true,
+  scriptVersions: true, scriptDiff: true, scriptRollback: true, scriptVersionExecution: true,
   deviceManagement: true, heartbeat: true, metrics: true, groups: true,
 };
