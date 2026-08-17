@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from backend.db import get_db
 from backend.models import RefreshToken, User, WifiConfig
+from backend.rbac import WIFI_CONFIGURE, require_permission
 from backend.security import create_access_token, create_refresh_token, encrypt, get_current_user, hash_password, verify_password
 
 router = APIRouter()
@@ -23,11 +24,11 @@ class RefreshIn(BaseModel):
     refresh_token: str = Field(min_length=20)
 
 @router.post('/wifi/validate')
-def wifi(data: WifiIn, _: User = Depends(get_current_user)):
+def wifi(data: WifiIn, _: User = Depends(require_permission(WIFI_CONFIGURE))):
     return {'valid': True, 'ssid': data.ssid}
 
 @router.post('/wifi/configure')
-def configure_wifi(data: WifiIn, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def configure_wifi(data: WifiIn, _: User = Depends(require_permission(WIFI_CONFIGURE)), db: Session = Depends(get_db)):
     config = WifiConfig(ssid=data.ssid, password_encrypted=encrypt(data.password))
     db.add(config); db.commit()
     return {'accepted': True, 'ssid': data.ssid, 'applied': False}
@@ -76,7 +77,8 @@ def logout(data: RefreshIn, db: Session = Depends(get_db)):
 
 @router.get('/auth/me')
 def me(user: User = Depends(get_current_user)):
-    return {'id': user.id, 'username': user.username, 'role': user.role}
+    permissions = sorted(getattr(user, 'permissions', set()))
+    return {'id': user.id, 'username': user.username, 'role': user.role, 'permissions': permissions}
 
 @router.websocket('/ws/echo')
 async def echo_websocket(websocket: WebSocket):

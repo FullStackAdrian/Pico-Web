@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.db import get_db
 from backend.models import User
+from backend.rbac import get_permissions_for_user
 
 JWT_ALGORITHM = "HS256"
 JWT_SECRET = os.getenv("JWT_SECRET", "development-only-change-this-secret")
@@ -71,6 +72,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
         user = None
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"})
+    user.permissions = get_permissions_for_user(db, user)
     return user
 
 def require_admin(user: User = Depends(get_current_user)) -> User:

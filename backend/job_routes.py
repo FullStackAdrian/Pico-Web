@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from backend.db import get_db
 from backend.job_system import job_system, serialize_job
 from backend.models import Device, Job, User
+from backend.rbac import JOBS_CANCEL, JOBS_CREATE, JOBS_READ, require_permission
 from backend.security import get_current_user
 
 router = APIRouter()
@@ -27,7 +28,7 @@ def _validate_device(db: Session, device_id: str | None):
 
 
 @router.post('/jobs', status_code=202)
-def create_job(data: JobIn, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_job(data: JobIn, _: User = Depends(require_permission(JOBS_CREATE)), db: Session = Depends(get_db)):
     _validate_device(db, data.device_id)
     try:
         job = job_system.enqueue(data.script_id, data.device_id)
@@ -37,7 +38,7 @@ def create_job(data: JobIn, _: User = Depends(get_current_user), db: Session = D
 
 
 @router.post('/jobs/batch', status_code=202)
-def create_batch(data: BatchJobIn, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_batch(data: BatchJobIn, _: User = Depends(require_permission(JOBS_CREATE)), db: Session = Depends(get_db)):
     _validate_device(db, data.device_id)
     jobs = []
     try:
@@ -49,12 +50,12 @@ def create_batch(data: BatchJobIn, _: User = Depends(get_current_user), db: Sess
 
 
 @router.get('/jobs')
-def list_jobs(_: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_jobs(_: User = Depends(require_permission(JOBS_READ)), db: Session = Depends(get_db)):
     return [serialize_job(job) for job in db.scalars(select(Job).order_by(Job.created_at.desc())).all()]
 
 
 @router.get('/jobs/{job_id}')
-def get_job(job_id: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_job(job_id: str, _: User = Depends(require_permission(JOBS_READ)), db: Session = Depends(get_db)):
     job = db.get(Job, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -62,7 +63,7 @@ def get_job(job_id: str, _: User = Depends(get_current_user), db: Session = Depe
 
 
 @router.post('/jobs/{job_id}/cancel')
-def cancel_job(job_id: str, _: User = Depends(get_current_user)):
+def cancel_job(job_id: str, _: User = Depends(require_permission(JOBS_CANCEL))):
     job = job_system.cancel(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")

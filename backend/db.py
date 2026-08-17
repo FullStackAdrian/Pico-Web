@@ -73,3 +73,5 @@ def init_db():
     _ensure_execution_columns()
     _ensure_script_columns()
     _ensure_job_columns()
+    from backend.rbac import seed_rbac
+    seed_rbac()

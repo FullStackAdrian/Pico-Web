@@ -6,6 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from backend.db import get_db
 from backend.models import Device, Payload, User
+from backend.rbac import DEVICES_CREATE, DEVICES_DELETE, DEVICES_READ, DEVICES_UPDATE, PAYLOADS_CREATE, PAYLOADS_DELETE, PAYLOADS_READ, require_permission
+from backend.rbac import DEVICES_CREATE, DEVICES_DELETE, DEVICES_READ, DEVICES_UPDATE, PAYLOADS_CREATE, PAYLOADS_DELETE, PAYLOADS_READ, require_permission
 from backend.security import decrypt, encrypt, get_current_user
 
 router = APIRouter()
@@ -73,7 +75,7 @@ def _validate_tags(tags: list[str]) -> list[str]:
     return cleaned
 
 @router.get('/devices')
-def devices(status: str | None = Query(default=None, pattern='^(online|offline|unknown)$'), group: str | None = None, tag: str | None = None, search: str | None = Query(default=None, max_length=100), _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def devices(status: str | None = Query(default=None, pattern='^(online|offline|unknown)$'), group: str | None = None, tag: str | None = None, search: str | None = Query(default=None, max_length=100), _: User = Depends(require_permission(DEVICES_READ)), db: Session = Depends(get_db)):
     rows = db.scalars(select(Device).order_by(Device.name)).all()
     now = datetime.now(timezone.utc)
     result = []
@@ -87,23 +89,23 @@ def devices(status: str | None = Query(default=None, pattern='^(online|offline|u
     return result
 
 @router.get('/devices/groups')
-def device_groups(_: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def device_groups(_: User = Depends(require_permission(DEVICES_READ)), db: Session = Depends(get_db)):
     return [x for x in db.scalars(select(Device.group_name).where(Device.group_name.is_not(None)).distinct().order_by(Device.group_name)).all() if x]
 
 @router.post('/devices', status_code=201)
-def create_device(data: DeviceIn, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_device(data: DeviceIn, _: User = Depends(require_permission(DEVICES_CREATE)), db: Session = Depends(get_db)):
     device = Device(id='device-' + uuid.uuid4().hex, name=data.name, pico_url_encrypted=encrypt(str(data.pico_url)), api_url_encrypted=encrypt(str(data.api_url)), status='unknown', group_name=data.group_name.strip() if data.group_name else None, tags=_validate_tags(data.tags), metrics={})
     db.add(device); db.commit(); db.refresh(device)
     return serialize_device(device)
 
 @router.get('/devices/{i}')
-def get_device(i: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_device(i: str, _: User = Depends(require_permission(DEVICES_READ)), db: Session = Depends(get_db)):
     device = db.get(Device, i)
     if not device: raise HTTPException(404, 'Device not found')
     return serialize_device(device)
 
 @router.put('/devices/{i}')
-def update_device(i: str, data: DeviceIn, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def update_device(i: str, data: DeviceIn, _: User = Depends(require_permission(DEVICES_UPDATE)), db: Session = Depends(get_db)):
     device = db.get(Device, i)
     if not device: raise HTTPException(404, 'Device not found')
     device.name = data.name; device.pico_url_encrypted = encrypt(str(data.pico_url)); device.api_url_encrypted = encrypt(str(data.api_url)); device.group_name = data.group_name.strip() if data.group_name else None; device.tags = _validate_tags(data.tags)
@@ -111,7 +113,7 @@ def update_device(i: str, data: DeviceIn, _: User = Depends(get_current_user), d
     return serialize_device(device)
 
 @router.patch('/devices/{i}')
-def patch_device(i: str, data: DevicePatch, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def patch_device(i: str, data: DevicePatch, _: User = Depends(require_permission(DEVICES_UPDATE)), db: Session = Depends(get_db)):
     device = db.get(Device, i)
     if not device: raise HTTPException(404, 'Device not found')
     changes = data.model_dump(exclude_unset=True)
@@ -124,13 +126,13 @@ def patch_device(i: str, data: DevicePatch, _: User = Depends(get_current_user),
     return serialize_device(device)
 
 @router.delete('/devices/{i}', status_code=204)
-def delete_device(i: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def delete_device(i: str, _: User = Depends(require_permission(DEVICES_DELETE)), db: Session = Depends(get_db)):
     device = db.get(Device, i)
     if not device: raise HTTPException(404, 'Device not found')
     db.delete(device); db.commit()
 
 @router.post('/devices/{i}/heartbeat')
-def heartbeat(i: str, data: HeartbeatIn, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def heartbeat(i: str, data: HeartbeatIn, _: User = Depends(require_permission(DEVICES_UPDATE)), db: Session = Depends(get_db)):
     device = db.get(Device, i)
     if not device: raise HTTPException(404, 'Device not found')
     now = datetime.now(timezone.utc)
@@ -141,23 +143,23 @@ def heartbeat(i: str, data: HeartbeatIn, _: User = Depends(get_current_user), db
     return {'status': 'ok', 'device': serialize_device(device, now), 'metrics': serialize_metrics(device)}
 
 @router.get('/devices/{i}/metrics')
-def device_metrics(i: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def device_metrics(i: str, _: User = Depends(require_permission(DEVICES_READ)), db: Session = Depends(get_db)):
     device = db.get(Device, i)
     if not device: raise HTTPException(404, 'Device not found')
     return serialize_metrics(device)
 
 @router.get('/payloads')
-def payloads(_: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def payloads(_: User = Depends(require_permission(PAYLOADS_READ)), db: Session = Depends(get_db)):
     return [serialize_payload(x) for x in db.scalars(select(Payload)).all()]
 
 @router.post('/payloads', status_code=201)
-def create_payload(data: PayloadIn, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_payload(data: PayloadIn, _: User = Depends(require_permission(PAYLOADS_CREATE)), db: Session = Depends(get_db)):
     payload = Payload(id='payload-' + uuid.uuid4().hex, **data.model_dump())
     db.add(payload); db.commit(); db.refresh(payload)
     return serialize_payload(payload)
 
 @router.delete('/payloads/{i}', status_code=204)
-def delete_payload(i: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def delete_payload(i: str, _: User = Depends(require_permission(PAYLOADS_DELETE)), db: Session = Depends(get_db)):
     payload = db.get(Payload, i)
     if not payload: raise HTTPException(404, 'Payload not found')
     db.delete(payload); db.commit()
