@@ -10,6 +10,7 @@ from backend.job_system import job_system
 from backend.routes import router
 from backend.audit import AuditMiddleware
 from backend.rate_limit import RateLimitMiddleware
+from backend.security import authenticate_websocket
 
 if os.getenv("ENVIRONMENT", "development") == "production" and (not os.getenv("DATABASE_URL") or not os.getenv("JWT_SECRET") or not os.getenv("ENCRYPTION_KEY")):
     raise RuntimeError("DATABASE_URL, JWT_SECRET and ENCRYPTION_KEY are required in production")
@@ -37,6 +38,10 @@ async def unhandled_exception_handler(_: Request, __: Exception):
 @app.websocket("/api/v1/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    user = authenticate_websocket(websocket)
+    if user is None:
+        await websocket.close(code=4401)
+        return
     client_queue = job_system.events.subscribe()
     try:
         await websocket.send_json({"type": "connected"})

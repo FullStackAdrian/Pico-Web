@@ -11,7 +11,7 @@ from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.db import get_db
+from backend.db import SessionLocal, get_db
 from backend.models import ApiKey, Session, User
 from backend.rbac import get_permissions_for_user
 
@@ -110,6 +110,35 @@ def require_session(user: User = Depends(get_current_user)) -> User:
     if getattr(user, "via_api_key", False):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session authentication required")
     return user
+
+def authenticate_websocket(websocket: "WebSocket") -> User | None:
+    """Validate a websocket handshake token. Returns the user or None if invalid."""
+    from fastapi import WebSocketDisconnect
+    token = websocket.query_params.get('token')
+    if not token:
+        auth = websocket.headers.get('authorization', '')
+        if auth.startswith('Bearer '):
+            token = auth[7:]
+    if not token:
+        return None
+    with SessionLocal() as db:
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            if payload.get("type") != "access" or not payload.get("sub"):
+                raise JWTError()
+            user = db.get(User, int(payload["sub"]))
+            session = None
+            session_id = payload.get("sid")
+            if session_id:
+                session = db.get(Session, session_id)
+                if session is None or not session.active or session.user_id != user.id:
+                    raise JWTError()
+        except (JWTError, ValueError, AttributeError):
+            user = None
+        if not user or not user.is_active:
+            return None
+        user.permissions = get_permissions_for_user(db, user)
+        return user
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != "admin":
