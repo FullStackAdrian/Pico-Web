@@ -36,7 +36,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         await websocket.send_json({"type": "connected"})
         while True:
-            event = await client_queue.get()
+            event = await asyncio.to_thread(client_queue.get)
             await websocket.send_json(event)
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
