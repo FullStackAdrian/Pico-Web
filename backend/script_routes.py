@@ -1,13 +1,12 @@
-from datetime import datetime, timezone
-import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from backend.db import get_db
 from backend.job_system import job_system, serialize_job
-from backend.models import Execution, Script
+from backend.models import Execution
 from backend.security import get_current_user
+from backend.scripts.service import ScriptNotFoundError, ScriptService, VersionNotFoundError
 
 router = APIRouter()
 
@@ -26,53 +25,80 @@ class ScriptUpdate(BaseModel):
 class ExecuteIn(BaseModel):
     device_id: str | None = None
 
-def serialize_script(x: Script):
-    return {"id": x.id, "name": x.name, "content": x.content, "tags": x.tags, "category": x.category, "createdAt": x.created_at.isoformat(), "updatedAt": x.updated_at.isoformat(), "source": x.source}
-
-def get_script_or_404(db: Session, script_id: str):
-    script = db.get(Script, script_id)
-    if not script:
-        raise HTTPException(status_code=404, detail="Script not found")
-    return script
+class RollbackIn(BaseModel):
+    version: int = Field(ge=1)
 
 @router.get('/scripts')
 def list_scripts(_: object = Depends(get_current_user), db: Session = Depends(get_db)):
-    return [serialize_script(x) for x in db.scalars(select(Script).order_by(Script.created_at.desc())).all()]
+    return ScriptService(db).list_scripts()
 
 @router.post('/scripts', status_code=201)
 def create_script(data: ScriptIn, _: object = Depends(get_current_user), db: Session = Depends(get_db)):
-    script = Script(id='script-' + uuid.uuid4().hex, name=data.name, content=data.content, tags=data.tags, category=data.category)
-    db.add(script); db.commit(); db.refresh(script)
-    return serialize_script(script)
+    return ScriptService(db).create_script(name=data.name, content=data.content, tags=data.tags, category=data.category)
 
 @router.post('/scripts/upload', status_code=201)
-def upload_script(data: ScriptIn, user: object = Depends(get_current_user), db: Session = Depends(get_db)):
-    return create_script(data, user, db)
+def upload_script(data: ScriptIn, _: object = Depends(get_current_user), db: Session = Depends(get_db)):
+    return ScriptService(db).create_script(name=data.name, content=data.content, tags=data.tags, category=data.category)
 
 @router.get('/scripts/{i}')
 def get_script(i: str, _: object = Depends(get_current_user), db: Session = Depends(get_db)):
-    return serialize_script(get_script_or_404(db, i))
+    try:
+        return ScriptService(db).get_script(i)
+    except ScriptNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 @router.put('/scripts/{i}')
 def update_script(i: str, data: ScriptUpdate, _: object = Depends(get_current_user), db: Session = Depends(get_db)):
-    script = get_script_or_404(db, i)
-    for key, value in data.model_dump(exclude_none=True).items(): setattr(script, key, value)
-    script.updated_at = datetime.now(timezone.utc)
-    db.commit(); db.refresh(script)
-    return serialize_script(script)
+    try:
+        return ScriptService(db).update_script(i, data.model_dump(exclude_none=True))
+    except ScriptNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 @router.delete('/scripts/{i}', status_code=204)
 def delete_script(i: str, _: object = Depends(get_current_user), db: Session = Depends(get_db)):
-    script = get_script_or_404(db, i); db.delete(script); db.commit()
+    try:
+        ScriptService(db).delete_script(i)
+    except ScriptNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 @router.post('/scripts/{i}/execute', status_code=202)
 def execute(i: str, data: ExecuteIn, _: object = Depends(get_current_user), db: Session = Depends(get_db)):
-    get_script_or_404(db, i)
     try:
+        ScriptService(db).get_script(i)
         job = job_system.enqueue(i, data.device_id)
+    except ScriptNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return serialize_job(job)
+
+@router.get('/scripts/{i}/versions')
+def list_versions(i: str, _: object = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        return ScriptService(db).list_versions(i)
+    except ScriptNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+@router.get('/scripts/{i}/versions/{version}')
+def get_version(i: str, version: int, _: object = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        return ScriptService(db).get_version(i, version)
+    except (ScriptNotFoundError, VersionNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+@router.post('/scripts/{i}/rollback')
+def rollback_script(i: str, data: RollbackIn, _: object = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        return ScriptService(db).rollback(i, data.version)
+    except (ScriptNotFoundError, VersionNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+@router.get('/scripts/{i}/diff')
+def diff_script(i: str, from_version: int = Query(alias='from'), to: int | None = None, _: object = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        return ScriptService(db).diff_versions(i, from_version, to)
+    except (ScriptNotFoundError, VersionNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 @router.get('/executions')
 def history(_: object = Depends(get_current_user), db: Session = Depends(get_db)):
