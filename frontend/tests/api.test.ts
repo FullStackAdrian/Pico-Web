@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { backendCapabilities, cancelJob, checkDevice, clearBackendAccessToken, createJob, createJobs, createManagedDevice, deleteManagedDevice, diffScriptVersions, executeOnPico, executeScriptVersion, getDeviceMetrics, getJob, getScriptVersion, listJobs, listManagedDevices, listRemoteScripts, listScriptVersions, rollbackScript, setBackendAccessToken, updateManagedDevice } from '../src/api';
+import { backendCapabilities, cancelJob, checkDevice, clearBackendAccessToken, createApiKey, createJob, createJobs, createManagedDevice, deleteManagedDevice, diffScriptVersions, executeOnPico, executeScriptVersion, getAuditLog, getDeviceMetrics, getJob, getMe, getScriptVersion, listApiKeys, listJobs, listManagedDevices, listPermissions, listRemoteScripts, listRoles, listSessions, listScriptVersions, listUsers, revokeAllSessions, revokeApiKey, revokeSession, rollbackScript, setBackendAccessToken, updateManagedDevice, updateUserRole } from '../src/api';
 import type { Device } from '../src/models';
 
 const device: Device = { id: 'd1', name: 'Test Pico', picoUrl: 'http://pico.local', apiUrl: 'http://api.local', status: 'unknown' };
@@ -213,7 +213,97 @@ describe('api', () => {
       list: true, execute: true, telemetry: true, auth: true, websocket: true,
       jobs: true, queue: true, multipleExecution: true, jobHistory: true,
       scriptVersions: true, scriptDiff: true, scriptRollback: true, scriptVersionExecution: true,
+      rbac: true, sessions: true, apiKeys: true, audit: true, rateLimiting: true,
       deviceManagement: true, heartbeat: true, metrics: true, groups: true,
     });
+  });
+
+  it('returns the authenticated principal with permissions', async () => {
+    mockFetch.mockResolvedValue(okJson({ id: 7, username: 'alice', role: 'admin', permissions: ['devices.read', 'devices.write'] }));
+    const me = await getMe();
+    expect(me).toEqual({ id: 7, username: 'alice', role: 'admin', permissions: ['devices.read', 'devices.write'] });
+  });
+
+  it('maps missing optional security fields to nulls and empty arrays', async () => {
+    mockFetch
+      .mockResolvedValueOnce(okJson({ id: 7, username: 'alice', role: 'user' }))
+      .mockResolvedValueOnce(okJson([{ id: 's1', user_id: 7, created_at: null, expires_at: null, last_used_at: null, ip: null, user_agent: null, active: false }]))
+      .mockResolvedValueOnce(okJson([{ id: 'k1', name: 'k', description: null, prefix: null, scopes: null, created_at: null, expires_at: null, last_used_at: null, revoked_at: null }]))
+      .mockResolvedValueOnce(okJson([{ id: 1, username: 'u', role: 'v', roles: null, is_active: false, created_at: null }]))
+      .mockResolvedValueOnce(okJson({ entries: [{ id: 1, user: null, api_key_id: null, action: 'X', resource: null, resource_id: null, success: false, ip: null, user_agent: null, created_at: null }], total: 0, limit: 10, offset: 0 }));
+    const me = await getMe();
+    expect(me.permissions).toEqual([]);
+    const [session] = await listSessions();
+    expect(session.createdAt).toBeNull();
+    expect(session.active).toBe(false);
+    const [key] = await listApiKeys();
+    expect(key.scopes).toEqual([]);
+    expect(key.prefix).toBe('');
+    const [user] = await listUsers();
+    expect(user.roles).toEqual([]);
+    expect(user.isActive).toBe(false);
+    const audit = await getAuditLog(10, 0);
+    expect(audit.entries[0].user).toBeNull();
+    expect(audit.total).toBe(0);
+    expect(audit.offset).toBe(0);
+  });
+
+  it('maps a user with active status and full audit fields', async () => {
+    mockFetch
+      .mockResolvedValueOnce(okJson([{ id: 2, username: 'carol', role: 'operator', roles: ['operator'], is_active: true, created_at: '2026-08-17T10:00:00Z' }]))
+      .mockResolvedValueOnce(okJson({ entries: [{ id: 2, user: 'carol', api_key_id: 'k1', action: 'API_KEY_CREATED', resource: 'api_keys', resource_id: 'k1', success: true, ip: '1.2.3.4', user_agent: 'jest', created_at: '2026-08-17T10:00:00Z' }], total: 1, limit: 10, offset: 0 }));
+    const [user] = await listUsers();
+    expect(user).toMatchObject({ id: 2, role: 'operator', roles: ['operator'], isActive: true });
+    const audit = await getAuditLog();
+    expect(audit.entries[0]).toMatchObject({ apiKeyId: 'k1', resourceId: 'k1', ip: '1.2.3.4', userAgent: 'jest' });
+    expect(audit.limit).toBe(10);
+  });
+
+  it('lists and revokes sessions', async () => {
+    const session = { id: 'session-1', user_id: 7, created_at: '2026-08-17T10:00:00Z', expires_at: '2026-09-01T10:00:00Z', last_used_at: '2026-08-17T10:05:00Z', ip: '127.0.0.1', user_agent: 'jest', active: true };
+    mockFetch.mockResolvedValueOnce(okJson([session])).mockResolvedValueOnce({ ok: true, status: 204 }).mockResolvedValueOnce({ ok: true, status: 204 });
+    const sessions = await listSessions();
+    expect(sessions[0]).toMatchObject({ id: 'session-1', userId: 7, active: true, ip: '127.0.0.1' });
+    await revokeSession('session-1');
+    expect(mockFetch.mock.calls[1][0]).toContain('/auth/sessions/session-1');
+    await revokeAllSessions();
+    expect(mockFetch.mock.calls[2][0]).toContain('/auth/sessions/revoke-all');
+  });
+
+  it('creates, lists and revokes API keys without leaking the secret in listings', async () => {
+    const created = { id: 'apikey-1', name: 'CI', description: '', prefix: 'pk_live_abc', scopes: ['scripts.read'], created_at: '2026-08-17T10:00:00Z', expires_at: null, last_used_at: null, revoked_at: null, key: 'pk_live_secret' };
+    const listed = { ...created, key: undefined };
+    mockFetch.mockResolvedValueOnce(okJson(created)).mockResolvedValueOnce(okJson([listed]));
+    const apiKey = await createApiKey({ name: 'CI', scopes: ['scripts.read'] });
+    expect(apiKey.key).toBe('pk_live_secret');
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({ name: 'CI', description: '', scopes: ['scripts.read'] });
+    const keys = await listApiKeys();
+    expect(keys[0]).toMatchObject({ id: 'apikey-1', name: 'CI', scopes: ['scripts.read'] });
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
+    await revokeApiKey('apikey-1');
+    expect(mockFetch.mock.calls[2][0]).toContain('/api-keys/apikey-1');
+  });
+
+  it('lists and updates users', async () => {
+    const user = { id: 3, username: 'bob', role: 'viewer', roles: [], is_active: true, created_at: '2026-08-17T10:00:00Z' };
+    mockFetch.mockResolvedValueOnce(okJson([user])).mockResolvedValueOnce(okJson({ ...user, role: 'admin' }));
+    const users = await listUsers();
+    expect(users[0]).toMatchObject({ id: 3, username: 'bob', role: 'viewer', isActive: true });
+    const updated = await updateUserRole(3, 'admin');
+    expect(updated.role).toBe('admin');
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body)).toEqual({ role: 'admin' });
+  });
+
+  it('lists roles, permissions and the audit log', async () => {
+    mockFetch
+      .mockResolvedValueOnce(okJson([{ name: 'viewer', description: 'read only', permissions: ['devices.read'] }]))
+      .mockResolvedValueOnce(okJson(['devices.read', 'devices.write']))
+      .mockResolvedValueOnce(okJson({ entries: [{ id: 1, user: 'alice', action: 'DEVICE_CREATED', resource: 'devices', resource_id: 'device-1', success: true, ip: '127.0.0.1', user_agent: null, created_at: '2026-08-17T10:00:00Z' }], total: 1, limit: 50, offset: 0 }));
+    const roles = await listRoles();
+    expect(roles[0]).toMatchObject({ name: 'viewer', permissions: ['devices.read'] });
+    expect(await listPermissions()).toEqual(['devices.read', 'devices.write']);
+    const audit = await getAuditLog();
+    expect(audit.entries[0]).toMatchObject({ id: 1, action: 'DEVICE_CREATED', resourceId: 'device-1' });
+    expect(audit.total).toBe(1);
   });
 });
