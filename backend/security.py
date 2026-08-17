@@ -11,7 +11,7 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from backend.db import get_db
-from backend.models import User
+from backend.models import Session, User
 from backend.rbac import get_permissions_for_user
 
 JWT_ALGORITHM = "HS256"
@@ -49,9 +49,11 @@ def encrypt(value: str) -> str:
 def decrypt(value: str) -> str:
     return fernet.decrypt(value.encode()).decode()
 
-def create_access_token(user: User) -> str:
+def create_access_token(user: User, session_id: str | None = None) -> str:
     now = datetime.now(timezone.utc)
     payload = {"sub": str(user.id), "username": user.username, "role": user.role, "type": "access", "iat": now, "exp": now + timedelta(minutes=ACCESS_MINUTES)}
+    if session_id:
+        payload["sid"] = session_id
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 def create_refresh_token(user: User) -> tuple[str, datetime]:
@@ -68,10 +70,20 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
         if payload.get("type") != "access" or not payload.get("sub"):
             raise JWTError()
         user = db.get(User, int(payload["sub"]))
-    except (JWTError, ValueError):
+        session = None
+        session_id = payload.get("sid")
+        if session_id:
+            session = db.get(Session, session_id)
+            if session is None or not session.active or session.user_id != user.id:
+                raise JWTError()
+    except (JWTError, ValueError, AttributeError):
         user = None
+        session = None
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"})
+    if session is not None and session.id:
+        session.last_used_at = datetime.now(timezone.utc)
+        db.commit()
     user.permissions = get_permissions_for_user(db, user)
     return user
 
