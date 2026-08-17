@@ -11,12 +11,26 @@ export type Script = {
 
 export type Execution = {
   id: string;
+  jobId?: string;
   scriptId: string;
   scriptName: string;
   startedAt: string;
   durationMs: number;
   success: boolean;
   error?: string;
+};
+
+export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+export type Job = {
+  id: string;
+  scriptId: string;
+  deviceId?: string | null;
+  status: JobStatus;
+  createdAt: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  error?: string | null;
 };
 
 export type Device = {

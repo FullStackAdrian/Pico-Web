@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Device, Script } from './models';
+import type { Device, Job, Script } from './models';
 
 const timeout = 6000;
 const BACKEND_URL = (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000/api/v1').replace(/\/$/, '');
@@ -90,7 +90,34 @@ export async function updateManagedDevice(deviceId: string, input: Partial<{ nam
 
 export async function deleteManagedDevice(deviceId: string) { await request(`${BACKEND_URL}/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE' }); }
 
+export async function createJob(input: { scriptId: string; deviceId?: string | null }): Promise<Job> {
+  const response = await request(`${BACKEND_URL}/jobs`, { method: 'POST', body: JSON.stringify({ script_id: input.scriptId, device_id: input.deviceId || null }) });
+  return response.json() as Promise<Job>;
+}
+
+export async function createJobs(scriptIds: string[], deviceId?: string | null): Promise<Job[]> {
+  const response = await request(`${BACKEND_URL}/jobs/batch`, { method: 'POST', body: JSON.stringify({ script_ids: scriptIds, device_id: deviceId || null }) });
+  const body = await response.json() as { jobs: Job[] };
+  return body.jobs;
+}
+
+export async function listJobs(): Promise<Job[]> {
+  const response = await request(`${BACKEND_URL}/jobs`);
+  return response.json() as Promise<Job[]>;
+}
+
+export async function getJob(jobId: string): Promise<Job> {
+  const response = await request(`${BACKEND_URL}/jobs/${encodeURIComponent(jobId)}`);
+  return response.json() as Promise<Job>;
+}
+
+export async function cancelJob(jobId: string): Promise<Job> {
+  const response = await request(`${BACKEND_URL}/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });
+  return response.json() as Promise<Job>;
+}
+
 export const backendCapabilities = {
   list: true, execute: true, read: false, upload: false, delete: false, telemetry: true, wifi: false,
-  auth: true, websocket: false, deviceManagement: true, heartbeat: true, metrics: true, groups: true,
+  auth: true, websocket: true, jobs: true, queue: true, multipleExecution: true, jobHistory: true,
+  deviceManagement: true, heartbeat: true, metrics: true, groups: true,
 };
