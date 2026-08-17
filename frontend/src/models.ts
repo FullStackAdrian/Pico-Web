@@ -4,9 +4,37 @@ export type Script = {
   content: string;
   tags: string[];
   category: string;
+  currentVersion?: number;
   createdAt: string;
   updatedAt: string;
   source: 'pico' | 'local';
+};
+
+export type ScriptVersion = {
+  id: string;
+  scriptId: string;
+  version: number;
+  content: string;
+  tags: string[];
+  category: string;
+  createdAt: string;
+};
+
+export type DiffHunk = {
+  type: 'replace' | 'delete' | 'insert';
+  oldStart: number;
+  oldEnd: number;
+  newStart: number;
+  newEnd: number;
+  oldLines: string[];
+  newLines: string[];
+};
+
+export type ScriptDiff = {
+  old: string;
+  new: string;
+  changed: boolean;
+  hunks: DiffHunk[];
 };
 
 export type Execution = {
@@ -14,6 +42,7 @@ export type Execution = {
   jobId?: string;
   scriptId: string;
   scriptName: string;
+  scriptVersion?: number | null;
   startedAt: string;
   durationMs: number;
   success: boolean;
@@ -26,6 +55,7 @@ export type Job = {
   id: string;
   scriptId: string;
   deviceId?: string | null;
+  scriptVersion?: number | null;
   status: JobStatus;
   createdAt: string;
   startedAt?: string | null;

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { backendCapabilities, cancelJob, checkDevice, clearBackendAccessToken, createJob, createJobs, createManagedDevice, deleteManagedDevice, executeOnPico, getDeviceMetrics, getJob, listJobs, listManagedDevices, listRemoteScripts, setBackendAccessToken, updateManagedDevice } from '../src/api';
+import { backendCapabilities, cancelJob, checkDevice, clearBackendAccessToken, createJob, createJobs, createManagedDevice, deleteManagedDevice, diffScriptVersions, executeOnPico, executeScriptVersion, getDeviceMetrics, getJob, getScriptVersion, listJobs, listManagedDevices, listRemoteScripts, listScriptVersions, rollbackScript, setBackendAccessToken, updateManagedDevice } from '../src/api';
 import type { Device } from '../src/models';
 
 const device: Device = { id: 'd1', name: 'Test Pico', picoUrl: 'http://pico.local', apiUrl: 'http://api.local', status: 'unknown' };
@@ -112,38 +112,107 @@ describe('api', () => {
   });
 
   it('creates a single job and normalizes an omitted device id', async () => {
-    const job = { id: 'job-1', script_id: 'script-1', device_id: null, status: 'queued' };
+    const job = { id: 'job-1', script_id: 'script-1', device_id: null, script_version: null, status: 'queued', created_at: '2026-08-17T10:00:00Z', started_at: null, finished_at: null, error: null };
     mockFetch.mockResolvedValue(okJson(job));
-    await expect(createJob({ scriptId: 'script-1' })).resolves.toEqual(job);
+    await expect(createJob({ scriptId: 'script-1' })).resolves.toEqual({ id: 'job-1', scriptId: 'script-1', deviceId: null, scriptVersion: null, status: 'queued', createdAt: '2026-08-17T10:00:00Z', startedAt: null, finishedAt: null, error: null });
     expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({ script_id: 'script-1', device_id: null });
   });
 
   it('creates a batch of jobs', async () => {
     const jobs = [{ id: 'job-1', script_id: 's1', status: 'queued' }, { id: 'job-2', script_id: 's2', status: 'queued' }];
     mockFetch.mockResolvedValue(okJson({ jobs }));
-    await expect(createJobs(['s1', 's2'], 'd1')).resolves.toEqual(jobs);
+    await expect(createJobs(['s1', 's2'], 'd1')).resolves.toMatchObject([{ id: 'job-1', scriptId: 's1', status: 'queued' }, { id: 'job-2', scriptId: 's2', status: 'queued' }]);
     expect(mockFetch.mock.calls[0][0]).toContain('/jobs/batch');
   });
 
   it('lists and retrieves jobs', async () => {
-    const job = { id: 'job-1', script_id: 's1', status: 'succeeded' };
+    const job = { id: 'job-1', script_id: 's1', status: 'succeeded', started_at: '2026-08-17T10:00:00Z' };
     mockFetch.mockResolvedValueOnce(okJson([job])).mockResolvedValueOnce(okJson(job));
-    await expect(listJobs()).resolves.toEqual([job]);
-    await expect(getJob('job/1')).resolves.toEqual(job);
+    await expect(listJobs()).resolves.toMatchObject([{ id: 'job-1', scriptId: 's1', status: 'succeeded', startedAt: '2026-08-17T10:00:00Z' }]);
+    await expect(getJob('job/1')).resolves.toMatchObject({ id: 'job-1', scriptId: 's1', startedAt: '2026-08-17T10:00:00Z' });
     expect(mockFetch.mock.calls[1][0]).toContain('/jobs/job%2F1');
   });
 
   it('cancels a job', async () => {
     const job = { id: 'job-1', script_id: 's1', status: 'cancelled' };
     mockFetch.mockResolvedValue(okJson(job));
-    await expect(cancelJob('job-1')).resolves.toEqual(job);
+    await expect(cancelJob('job-1')).resolves.toMatchObject({ id: 'job-1', scriptId: 's1', status: 'cancelled' });
     expect(mockFetch.mock.calls[0][1]).toEqual(expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('lists and retrieves script versions', async () => {
+    const version = { id: 'version-2', scriptId: 's1', version: 2, content: 'v2', tags: ['a'], category: 'cat', createdAt: '2026-08-17T10:00:00Z' };
+    mockFetch.mockResolvedValueOnce(okJson([{ ...version, version: 1 }, version])).mockResolvedValueOnce(okJson(version));
+    const versions = await listScriptVersions('s1');
+    expect(versions.map(v => v.version)).toEqual([1, 2]);
+    expect(versions[0]).toMatchObject({ scriptId: 's1', content: 'v2', createdAt: '2026-08-17T10:00:00Z' });
+    expect(mockFetch.mock.calls[0][0]).toContain('/scripts/s1/versions');
+    const single = await getScriptVersion('s1', 2);
+    expect(single).toMatchObject({ version: 2, scriptId: 's1', content: 'v2' });
+    expect(mockFetch.mock.calls[1][0]).toContain('/scripts/s1/versions/2');
+  });
+
+  it('computes a diff between versions and against the current state', async () => {
+    const diff = { old: 'one\n', new: 'one\ntwo\n', changed: true, hunks: [{ type: 'insert', old_start: 1, old_end: 1, new_start: 2, new_end: 3, old_lines: [], new_lines: ['two'] }] };
+    mockFetch.mockResolvedValueOnce(okJson(diff)).mockResolvedValueOnce(okJson(diff));
+    const between = await diffScriptVersions('s1', 1, 2);
+    expect(between.changed).toBe(true);
+    expect(between.hunks[0].newLines).toEqual(['two']);
+    expect(mockFetch.mock.calls[0][0]).toContain('/scripts/s1/diff?from=1&to=2');
+    await diffScriptVersions('s1', 1);
+    expect(mockFetch.mock.calls[1][0]).toContain('/scripts/s1/diff?from=1');
+  });
+
+  it('rolls a script back to a previous version', async () => {
+    const rolled = { id: 's1', name: 'demo', content: 'v1', currentVersion: 3, tags: [], category: 'cat', source: 'local' };
+    mockFetch.mockResolvedValue(okJson(rolled));
+    const result = await rollbackScript('s1', 1);
+    expect(result.currentVersion).toBe(3);
+    expect(result.source).toBe('local');
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({ version: 1 });
+    expect(mockFetch.mock.calls[0][1].method).toBe('POST');
+    expect(mockFetch.mock.calls[0][0]).toContain('/scripts/s1/rollback');
+  });
+
+  it('maps version snapshots with missing optional fields', async () => {
+    mockFetch.mockResolvedValue(okJson([{ id: 'v1', scriptId: 's1', version: 1, content: 'c', tags: null, category: 'cat', createdAt: '2026-08-17T10:00:00Z' }]));
+    const [version] = await listScriptVersions('s1');
+    expect(version.tags).toEqual([]);
+  });
+
+  it('maps diffs with missing hunks and line arrays', async () => {
+    mockFetch
+      .mockResolvedValueOnce(okJson({ old: 'a', new: 'b', changed: true, hunks: null }))
+      .mockResolvedValueOnce(okJson({ old: 'a', new: 'b', changed: true, hunks: [{ type: 'replace', old_start: 1, old_end: 1, new_start: 1, new_end: 1, old_lines: null, new_lines: null }] }));
+    await expect(diffScriptVersions('s1', 1)).resolves.toMatchObject({ hunks: [] });
+    const diff = await diffScriptVersions('s1', 1, 2);
+    expect(diff.hunks[0]).toMatchObject({ oldLines: [], newLines: [] });
+  });
+
+  it('maps a pico-sourced script rollback without a current version', async () => {
+    mockFetch.mockResolvedValue(okJson({ id: 's1', name: 'n', content: 'c', tags: null, category: 'cat', source: 'pico' }));
+    const script = await rollbackScript('s1', 1);
+    expect(script.source).toBe('pico');
+    expect(script.tags).toEqual([]);
+    expect(script.currentVersion).toBeUndefined();
+  });
+
+  it('executes a script with an optional pinned version', async () => {
+    const job = { id: 'job-1', script_id: 's1', script_version: 1, status: 'queued' };
+    mockFetch.mockResolvedValueOnce(okJson(job)).mockResolvedValueOnce(okJson({ ...job, script_version: null }));
+    const pinned = await executeScriptVersion('s1', 1);
+    expect(pinned.scriptVersion).toBe(1);
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({ version: 1 });
+    const latest = await executeScriptVersion('s1');
+    expect(latest.scriptVersion).toBeNull();
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body)).toEqual({ version: null });
   });
 
   it('documents the device and job capability boundary', () => {
     expect(backendCapabilities).toMatchObject({
       list: true, execute: true, telemetry: true, auth: true, websocket: true,
       jobs: true, queue: true, multipleExecution: true, jobHistory: true,
+      scriptVersions: true, scriptDiff: true, scriptRollback: true, scriptVersionExecution: true,
       deviceManagement: true, heartbeat: true, metrics: true, groups: true,
     });
   });

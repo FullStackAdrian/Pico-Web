@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, JSON
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.db import Base
 
@@ -33,14 +33,29 @@ class Script(Base):
     tags: Mapped[list] = mapped_column(JSON, default=list)
     category: Mapped[str] = mapped_column(String(120), default="Uncategorized")
     source: Mapped[str] = mapped_column(String(32), default="local")
+    current_version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    versions: Mapped[list["ScriptVersion"]] = relationship(back_populates="script", cascade="all, delete-orphan")
+
+class ScriptVersion(Base):
+    __tablename__ = "script_versions"
+    __table_args__ = (UniqueConstraint("script_id", "version", name="uq_script_version"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    script_id: Mapped[str] = mapped_column(ForeignKey("scripts.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int] = mapped_column(Integer, index=True)
+    content: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    category: Mapped[str] = mapped_column(String(120), default="Uncategorized")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    script: Mapped[Script] = relationship(back_populates="versions")
 
 class Job(Base):
     __tablename__ = "jobs"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     script_id: Mapped[str] = mapped_column(ForeignKey("scripts.id", ondelete="CASCADE"), index=True)
     device_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    script_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -53,6 +68,7 @@ class Execution(Base):
     job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True, index=True)
     script_id: Mapped[str] = mapped_column(ForeignKey("scripts.id", ondelete="CASCADE"))
     script_name: Mapped[str] = mapped_column(String(160))
+    script_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
     success: Mapped[bool] = mapped_column(Boolean, default=True)

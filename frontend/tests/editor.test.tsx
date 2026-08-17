@@ -3,14 +3,18 @@ import Editor from '../app/editor';
 import { loadState, saveState, newScript } from '../src/storage';
 
 jest.mock('../src/storage', () => ({ loadState: jest.fn(), saveState: jest.fn(), newScript: jest.fn(() => ({ id: 'local-new', name: 'New payload', content: '', tags: [], category: 'Uncategorized', createdAt: '2026-01-01', updatedAt: '2026-01-01', source: 'local' })) }));
-jest.mock('expo-router', () => ({ useLocalSearchParams: jest.fn(() => ({ id: 's1' })), router: { back: jest.fn() } }));
+jest.mock('expo-router', () => ({ useLocalSearchParams: jest.fn(() => ({ id: 's1' })), router: { back: jest.fn(), push: jest.fn() } }));
 
 const state = { scripts: [{ id: 's1', name: 'Old name', content: 'STRING old', tags: ['old'], category: 'Demo', createdAt: '2026-01-01', updatedAt: '2026-01-01', source: 'local' }], executions: [], payloads: [], devices: [], activeDeviceId: '' };
 const mockedLoad = loadState as jest.Mock;
 const mockedSave = saveState as jest.Mock;
 
 describe('Editor', () => {
-  beforeEach(() => { jest.clearAllMocks(); mockedLoad.mockResolvedValue(structuredClone(state)); });
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedLoad.mockResolvedValue(structuredClone(state));
+    (require('expo-router').useLocalSearchParams as jest.Mock).mockReturnValue({ id: 's1' });
+  });
 
   it('renders the existing script', async () => {
     const { getByDisplayValue, getByText } = render(<Editor />);
@@ -40,5 +44,13 @@ describe('Editor', () => {
     render(<Editor />);
     await waitFor(() => expect(newScript).toHaveBeenCalled());
     expect(mockedSave).toHaveBeenCalled();
+  });
+
+  it('navigates to the versions screen for the current script', async () => {
+    const { getByText } = render(<Editor />);
+    await waitFor(() => expect(getByText('Old name')).toBeTruthy());
+    fireEvent.press(getByText('Versions'));
+    const router = require('expo-router');
+    expect(router.router.push).toHaveBeenCalledWith({ pathname: '/versions', params: { id: 's1' } });
   });
 });
