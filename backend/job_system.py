@@ -23,6 +23,7 @@ def serialize_job(job: Job) -> dict[str, Any]:
         "id": job.id,
         "script_id": job.script_id,
         "device_id": job.device_id,
+        "script_version": job.script_version,
         "status": job.status,
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "started_at": job.started_at.isoformat() if job.started_at else None,
@@ -66,12 +67,12 @@ class JobSystem:
         self.futures: dict[str, Future] = {}
         self.events = JobEventHub()
 
-    def enqueue(self, script_id: str, device_id: str | None = None) -> Job:
+    def enqueue(self, script_id: str, device_id: str | None = None, script_version: int | None = None) -> Job:
         with SessionLocal() as db:
             script = db.get(Script, script_id)
             if not script:
                 raise ValueError("Script not found")
-            job = Job(id="job-" + uuid.uuid4().hex, script_id=script_id, device_id=device_id, status="queued")
+            job = Job(id="job-" + uuid.uuid4().hex, script_id=script_id, device_id=device_id, script_version=script_version, status="queued")
             db.add(job)
             db.commit()
             db.refresh(job)
@@ -132,6 +133,7 @@ class JobSystem:
                 job_id=job.id,
                 script_id=script.id,
                 script_name=script.name,
+                script_version=job.script_version,
                 device_id=job.device_id,
             )
             db.add(execution)

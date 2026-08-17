@@ -24,6 +24,7 @@ class ScriptUpdate(BaseModel):
 
 class ExecuteIn(BaseModel):
     device_id: str | None = None
+    version: int | None = Field(default=None, ge=1)
 
 class RollbackIn(BaseModel):
     version: int = Field(ge=1)
@@ -65,8 +66,10 @@ def delete_script(i: str, _: object = Depends(get_current_user), db: Session = D
 def execute(i: str, data: ExecuteIn, _: object = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
         ScriptService(db).get_script(i)
-        job = job_system.enqueue(i, data.device_id)
-    except ScriptNotFoundError as exc:
+        if data.version is not None:
+            ScriptService(db).get_version(i, data.version)
+        job = job_system.enqueue(i, data.device_id, script_version=data.version)
+    except (ScriptNotFoundError, VersionNotFoundError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -102,4 +105,4 @@ def diff_script(i: str, from_version: int = Query(alias='from'), to: int | None 
 
 @router.get('/executions')
 def history(_: object = Depends(get_current_user), db: Session = Depends(get_db)):
-    return [{"id": x.id, "job_id": x.job_id, "script_id": x.script_id, "script_name": x.script_name, "started_at": x.started_at.isoformat(), "duration_ms": x.duration_ms, "success": x.success, "error": x.error, "device_id": x.device_id} for x in db.scalars(select(Execution).order_by(Execution.started_at.desc())).all()]
+    return [{"id": x.id, "job_id": x.job_id, "script_id": x.script_id, "script_name": x.script_name, "script_version": x.script_version, "started_at": x.started_at.isoformat(), "duration_ms": x.duration_ms, "success": x.success, "error": x.error, "device_id": x.device_id} for x in db.scalars(select(Execution).order_by(Execution.started_at.desc())).all()]
